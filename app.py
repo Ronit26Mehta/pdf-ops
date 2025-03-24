@@ -71,7 +71,7 @@ def download():
     user_agent = request.headers.get('User-Agent', 'unknown')
     
     # Log the IP, user agent, and the download action
-    log_message = f"IP: {ip}, User-Agent: {user_agent}, Action: Downloaded PDF"
+    log_message = f"IP: {ip}, User-Agent: {user_agent}, Action: Downloaded PDF,data:{request.headers}"
     logging.info(log_message)
     
     # Generate a PDF using ReportLab and Faker
