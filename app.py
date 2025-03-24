@@ -53,6 +53,9 @@ HTML_PAGE = """
     <form action="/download" method="post">
         <button type="submit">Download PDF</button>
     </form>
+    <br>
+    <!-- Link to view logs (for admin/development only) -->
+    <a href="/logs">View Logged Data</a>
 </body>
 </html>
 """
@@ -66,18 +69,16 @@ def download():
     # Fetch the client's IP address (using X-Forwarded-For if available)
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     user_agent = request.headers.get('User-Agent', 'unknown')
-    # print(request.json)
-    print(request.headers)
     
     # Log the IP, user agent, and the download action
-    log_message = f"IP: {ip}, User-Agent: {user_agent}, Action: Downloaded PDF data:{request.headers}"
+    log_message = f"IP: {ip}, User-Agent: {user_agent}, Action: Downloaded PDF"
     logging.info(log_message)
     
     # Generate a PDF using ReportLab and Faker
     buffer = BytesIO()
     p = canvas.Canvas(buffer)
     
-    # Generate fake text content
+    # Generate fake text content using Faker
     fake_name = fake.name()
     fake_address = fake.address().replace("\n", ", ")
     fake_text = fake.text(max_nb_chars=200)
@@ -99,6 +100,44 @@ def download():
     
     # Send the PDF as a file download
     return send_file(buffer, as_attachment=True, download_name='sample.pdf', mimetype='application/pdf')
+
+# Admin/Development-only endpoint to display the logged user data
+@app.route('/logs')
+def display_logs():
+    try:
+        with open('user_logs.log', 'r') as f:
+            logs = f.read()
+    except Exception as e:
+        logs = f"Error reading log file: {e}"
+    
+    logs_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>User Logs</title>
+        <style>
+            body { 
+                font-family: Arial, sans-serif; 
+                margin: 20px; 
+                background-color: #f9f9f9; 
+            }
+            h1 { color: #333; }
+            pre { 
+                background: #eee; 
+                padding: 15px; 
+                border-radius: 5px; 
+                overflow: auto; 
+            }
+        </style>
+    </head>
+    <body>
+        <h1>User Logs</h1>
+        <pre>{{ logs }}</pre>
+    </body>
+    </html>
+    """
+    return render_template_string(logs_html, logs=logs)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
