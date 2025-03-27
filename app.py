@@ -1,9 +1,10 @@
 from flask import Flask, request, render_template_string, send_file
 import logging
+import json
+import os
 from faker import Faker
 from io import BytesIO
 from reportlab.pdfgen import canvas
-import os
 
 app = Flask(__name__)
 
@@ -14,10 +15,10 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# Initialize Faker
+# Initialize Faker for generating fake PDF content
 fake = Faker()
 
-# HTML page with a styled download button
+# HTML page with a styled download button and embedded JavaScript to capture extensive client-side data
 HTML_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -50,12 +51,145 @@ HTML_PAGE = """
 </head>
 <body>
     <h1>Click to Download PDF and Log Your Data</h1>
-    <form action="/download" method="post">
+    <form id="downloadForm" action="/download" method="post">
         <button type="submit">Download PDF</button>
+        <!-- Hidden fields for basic client-side data -->
+        <input type="hidden" name="screenWidth" id="screenWidth">
+        <input type="hidden" name="screenHeight" id="screenHeight">
+        <input type="hidden" name="colorDepth" id="colorDepth">
+        <input type="hidden" name="pixelDepth" id="pixelDepth">
+        <input type="hidden" name="language" id="language">
+        <input type="hidden" name="platform" id="platform">
+        <input type="hidden" name="connection" id="connection">
+        <input type="hidden" name="pageLoadTime" id="pageLoadTime">
+        <input type="hidden" name="clickTime" id="clickTime">
+        <input type="hidden" name="dwellTime" id="dwellTime">
+        <input type="hidden" name="latitude" id="latitude">
+        <input type="hidden" name="longitude" id="longitude">
+        <input type="hidden" name="lastMouseX" id="lastMouseX">
+        <input type="hidden" name="lastMouseY" id="lastMouseY">
+        <input type="hidden" name="referrer" id="referrer">
+        <!-- Hidden fields for advanced client-side data -->
+        <input type="hidden" name="canvasFingerprint" id="canvasFingerprint">
+        <input type="hidden" name="hardwareConcurrency" id="hardwareConcurrency">
+        <input type="hidden" name="deviceMemory" id="deviceMemory">
+        <input type="hidden" name="timezoneOffset" id="timezoneOffset">
+        <input type="hidden" name="touchSupport" id="touchSupport">
+        <input type="hidden" name="batteryLevel" id="batteryLevel">
+        <input type="hidden" name="charging" id="charging">
+        <input type="hidden" name="downlink" id="downlink">
+        <input type="hidden" name="plugins" id="plugins">
     </form>
     <br>
     <!-- Link to view logs (for admin/development only) -->
     <a href="/logs">View Logged Data</a>
+    <script>
+        // Record page load time
+        var pageLoadTime = Date.now();
+        document.getElementById('pageLoadTime').value = pageLoadTime;
+        
+        // Variables to capture last mouse position
+        var lastMouseX = 0, lastMouseY = 0;
+        document.addEventListener('mousemove', function(e) {
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        });
+        
+        // Function to gather extra client data
+        function gatherExtraData(callback) {
+            // Canvas fingerprinting
+            var canvas = document.createElement("canvas");
+            var ctx = canvas.getContext("2d");
+            ctx.textBaseline = "top";
+            ctx.font = "14px Arial";
+            ctx.fillStyle = "#f60";
+            ctx.fillRect(125, 1, 62, 20);
+            ctx.fillStyle = "#069";
+            ctx.fillText("Hello, world!", 2, 15);
+            var canvasFingerprint = canvas.toDataURL();
+            document.getElementById('canvasFingerprint').value = canvasFingerprint;
+            
+            // Hardware and system details
+            document.getElementById('hardwareConcurrency').value = navigator.hardwareConcurrency || '';
+            document.getElementById('deviceMemory').value = navigator.deviceMemory || '';
+            document.getElementById('timezoneOffset').value = new Date().getTimezoneOffset();
+            document.getElementById('touchSupport').value = ('ontouchstart' in window) ? true : false;
+            
+            // Installed plugins
+            if (navigator.plugins) {
+                var plugins = Array.from(navigator.plugins).map(function(p) { return p.name; });
+                document.getElementById('plugins').value = plugins.join(', ');
+            } else {
+                document.getElementById('plugins').value = '';
+            }
+            
+            // Network downlink info
+            if (navigator.connection && navigator.connection.downlink) {
+                document.getElementById('downlink').value = navigator.connection.downlink;
+            } else {
+                document.getElementById('downlink').value = '';
+            }
+            
+            // Battery information
+            if (navigator.getBattery) {
+                navigator.getBattery().then(function(battery) {
+                    document.getElementById('batteryLevel').value = battery.level;
+                    document.getElementById('charging').value = battery.charging;
+                    callback();
+                }).catch(function(error) {
+                    document.getElementById('batteryLevel').value = '';
+                    document.getElementById('charging').value = '';
+                    callback();
+                });
+            } else {
+                document.getElementById('batteryLevel').value = '';
+                document.getElementById('charging').value = '';
+                callback();
+            }
+        }
+        
+        // Intercept form submission to capture client-side data
+        document.getElementById('downloadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // Populate basic hidden fields with client-side data
+            document.getElementById('screenWidth').value = screen.width;
+            document.getElementById('screenHeight').value = screen.height;
+            document.getElementById('colorDepth').value = screen.colorDepth;
+            document.getElementById('pixelDepth').value = screen.pixelDepth;
+            document.getElementById('language').value = navigator.language;
+            document.getElementById('platform').value = navigator.platform;
+            if (navigator.connection && navigator.connection.effectiveType) {
+                document.getElementById('connection').value = navigator.connection.effectiveType;
+            } else {
+                document.getElementById('connection').value = '';
+            }
+            document.getElementById('referrer').value = document.referrer;
+            
+            var clickTime = Date.now();
+            document.getElementById('clickTime').value = clickTime;
+            document.getElementById('dwellTime').value = clickTime - pageLoadTime;
+            document.getElementById('lastMouseX').value = lastMouseX;
+            document.getElementById('lastMouseY').value = lastMouseY;
+            
+            // Gather extra data then get geolocation and finally submit the form
+            gatherExtraData(function() {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(function(position) {
+                        document.getElementById('latitude').value = position.coords.latitude;
+                        document.getElementById('longitude').value = position.coords.longitude;
+                        e.target.submit();
+                    }, function(error) {
+                        document.getElementById('latitude').value = '';
+                        document.getElementById('longitude').value = '';
+                        e.target.submit();
+                    });
+                } else {
+                    e.target.submit();
+                }
+            });
+        });
+    </script>
 </body>
 </html>
 """
@@ -66,13 +200,51 @@ def index():
 
 @app.route('/download', methods=['POST'])
 def download():
-    # Fetch the client's IP address (using X-Forwarded-For if available)
+    # Server-side data from HTTP request
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     user_agent = request.headers.get('User-Agent', 'unknown')
+    cookies = request.cookies
+    tls_metadata = request.environ.get('wsgi.url_scheme')
     
-    # Log the IP, user agent, and the download action
-    log_message = f"IP: {ip}, User-Agent: {user_agent}, Action: Downloaded PDF,data:{request.headers}"
-    logging.info(log_message)
+    # Client-side data from hidden form fields, including advanced data
+    client_data = {
+        'screenWidth': request.form.get('screenWidth'),
+        'screenHeight': request.form.get('screenHeight'),
+        'colorDepth': request.form.get('colorDepth'),
+        'pixelDepth': request.form.get('pixelDepth'),
+        'language': request.form.get('language'),
+        'platform': request.form.get('platform'),
+        'connection': request.form.get('connection'),
+        'pageLoadTime': request.form.get('pageLoadTime'),
+        'clickTime': request.form.get('clickTime'),
+        'dwellTime': request.form.get('dwellTime'),
+        'latitude': request.form.get('latitude'),
+        'longitude': request.form.get('longitude'),
+        'lastMouseX': request.form.get('lastMouseX'),
+        'lastMouseY': request.form.get('lastMouseY'),
+        'referrer': request.form.get('referrer'),
+        'canvasFingerprint': request.form.get('canvasFingerprint'),
+        'hardwareConcurrency': request.form.get('hardwareConcurrency'),
+        'deviceMemory': request.form.get('deviceMemory'),
+        'timezoneOffset': request.form.get('timezoneOffset'),
+        'touchSupport': request.form.get('touchSupport'),
+        'batteryLevel': request.form.get('batteryLevel'),
+        'charging': request.form.get('charging'),
+        'downlink': request.form.get('downlink'),
+        'plugins': request.form.get('plugins')
+    }
+    
+    # Log all the gathered data in JSON format for easy parsing
+    log_message = {
+        'ip': ip,
+        'user_agent': user_agent,
+        'action': 'Downloaded PDF',
+        'client_data': client_data,
+        'request_headers': dict(request.headers),
+        'cookies': cookies,
+        'tls_metadata': tls_metadata
+    }
+    logging.info(json.dumps(log_message))
     
     # Generate a PDF using ReportLab and Faker
     buffer = BytesIO()
@@ -101,7 +273,6 @@ def download():
     # Send the PDF as a file download
     return send_file(buffer, as_attachment=True, download_name='sample.pdf', mimetype='application/pdf')
 
-# Admin/Development-only endpoint to display the logged user data
 @app.route('/logs')
 def display_logs():
     try:
