@@ -1,3 +1,4 @@
 Flask
 Faker
 reportlab
+requests
