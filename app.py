@@ -40,7 +40,6 @@ def get_ip_geolocation(ip):
     return None, None, {}
 
 # HTML page with a styled download button and embedded JavaScript to capture extensive client-side data.
-# The geolocation prompt is removed; location is fetched on the server side.
 HTML_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -205,13 +204,15 @@ def index():
 
 @app.route('/download', methods=['POST'])
 def download():
-    # Server-side data from the HTTP request
-    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    # Retrieve the IP address; if multiple IPs are present, take the first one.
+    ip_header = request.headers.get('X-Forwarded-For', request.remote_addr)
+    ip = ip_header.split(",")[0].strip() if ip_header else request.remote_addr
+    
     user_agent = request.headers.get('User-Agent', 'unknown')
     cookies = request.cookies
     tls_metadata = request.environ.get('wsgi.url_scheme')
     
-    # Retrieve client-side data from the form submission
+    # Retrieve client-side data from the form submission.
     client_data = {
         'screenWidth': request.form.get('screenWidth'),
         'screenHeight': request.form.get('screenHeight'),
@@ -243,7 +244,7 @@ def download():
     client_data['longitude'] = lon if lon is not None else ""
     client_data['ip_geolocation'] = geo_data  # Entire JSON from ipinfo.io
     
-    # Log all the gathered data in JSON format
+    # Log all the gathered data in JSON format.
     log_message = {
         'ip': ip,
         'user_agent': user_agent,
@@ -255,7 +256,7 @@ def download():
     }
     logging.info(json.dumps(log_message))
     
-    # Generate a PDF using ReportLab and Faker
+    # Generate a PDF using ReportLab and Faker.
     buffer = BytesIO()
     p = canvas.Canvas(buffer)
     fake_name = fake.name()
@@ -272,7 +273,7 @@ def download():
     p.save()
     buffer.seek(0)
     
-    # Send the PDF as a file download
+    # Send the PDF as a file download.
     return send_file(buffer, as_attachment=True, download_name='sample.pdf', mimetype='application/pdf')
 
 @app.route('/logs')
