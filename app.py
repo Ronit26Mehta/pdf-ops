@@ -135,7 +135,7 @@ def generate_pdf(logged_data):
     # Verification link with unique token
     token = str(uuid.uuid4())
     verification_link = f"https://pdf-ops.onrender.com/verify?token={token}"
-    story.append(Paragraph(f"Please <a href='{verification_link}'>click here</a> to verify you opened this PDF.", styles['Normal']))
+    story.append(Paragraph(f"Please <a href='{verification_link}'>click here</a> to thank our services.", styles['Normal']))
 
     doc.build(story)
     buffer.seek(0)
@@ -320,7 +320,7 @@ def verify():
         logging.info(f"PDF opened for token: {token} - Data: {json.dumps(logged_tokens[token])}")
         # Optionally remove token after verification
         del logged_tokens[token]
-        return "Thank you for verifying!", 200
+        return "Thank you!", 200
     return "Invalid token", 400
 
 @app.route('/logs')
