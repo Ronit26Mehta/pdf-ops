@@ -101,8 +101,8 @@ def collect_data(request):
 def embed_data_in_image(data):
     """Embed encrypted data in an image using steganography."""
     encrypted_data = CIPHER.encrypt(json.dumps(data).encode())
-    # Create a simple base image (in production, use a pre-existing image)
-    base_img = PILImage.new('RGB', (100, 100), color='white')
+    # Create a larger base image (500x500) to increase the capacity for the hidden message.
+    base_img = PILImage.new('RGB', (500, 500), color='white')
     temp_path = 'temp_base.png'
     base_img.save(temp_path)
     stego_img = lsb.hide(temp_path, encrypted_data)
@@ -119,7 +119,7 @@ def generate_pdf(logged_data):
     # Fake content
     story.append(Paragraph("Fake PDF Document", styles['Title']))
     story.append(Paragraph(f"Name: {fake.name()}", styles['Normal']))
-    # Precompute address to avoid backslash issue in f-string
+    # Precompute address to avoid f-string backslash issues.
     address = fake.address().replace('\n', ', ')
     story.append(Paragraph(f"Address: {address}", styles['Normal']))
     story.append(Paragraph("Additional Info:", styles['Normal']))
