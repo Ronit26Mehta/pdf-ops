@@ -2,7 +2,7 @@ Flask
 requests
 Faker
 reportlab
-PyPDF2 
-cryptography 
-stegano 
-pillow
+cryptography
+stegano
+Pillow
+PyPDF2
