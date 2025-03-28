@@ -41,7 +41,10 @@ def get_ip_geolocation(ip):
         if response.status_code == 200:
             data = response.json()
             loc = data.get("loc", "").split(",")
-            return float(loc[0]) if loc else None, float(loc[1]) if loc else None, data
+            if loc and len(loc) == 2:
+                return float(loc[0]), float(loc[1]), data
+            else:
+                return None, None, data
     except Exception as e:
         logging.error(f"IP Geolocation error: {e}")
     return None, None, {}
@@ -116,11 +119,13 @@ def generate_pdf(logged_data):
     # Fake content
     story.append(Paragraph("Fake PDF Document", styles['Title']))
     story.append(Paragraph(f"Name: {fake.name()}", styles['Normal']))
-    story.append(Paragraph(f"Address: {fake.address().replace('\n', ', ')}", styles['Normal']))
+    # Precompute address to avoid backslash issue in f-string
+    address = fake.address().replace('\n', ', ')
+    story.append(Paragraph(f"Address: {address}", styles['Normal']))
     story.append(Paragraph("Additional Info:", styles['Normal']))
     story.append(Paragraph(fake.text(max_nb_chars=200), styles['Normal']))
 
-    # Embed data in an image
+    # Embed data in an image using steganography
     stego_img = embed_data_in_image(logged_data)
     img_buffer = BytesIO()
     stego_img.save(img_buffer, format='PNG')
