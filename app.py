@@ -143,23 +143,66 @@ def get_gemini_report(data):
     """
     try:
         prompt = (
-            """You are a highly skilled Security and Forensics Analyst. Your task is to analyze the following data and provide a comprehensive security report.
-            
-**Instructions:**
-1. Identify potential security threats or vulnerabilities.
-2. Assess the risk level (High, Medium, Low) for each threat.
-3. Provide specific recommendations to mitigate each identified risk.
-4. Explain your reasoning with reference to specific data points.
+ """   You are a cybersecurity investigator tasked with analyzing device and user details
+    to identify potential connections and patterns related to online harassment.
+    Your goal is to generate a report highlighting potential leads for further investigation.
 
-**Report Structure:**
-- **Date:** [Current Date and Time]
-- **Data Source:** Provided system logs and client data.
-- **Executive Summary:** Brief overview of key findings.
-- **Detailed Findings:** List of findings with risk level, evidence, and recommendations.
-- **Conclusion:** Overall assessment of security posture.
+    **Important Considerations:**
 
-**Data to Analyze:**
-""" + json.dumps(data, indent=2) + """
+    *   This analysis is for investigative purposes only. It does NOT definitively
+        identify a harasser.
+    *   False positives are possible. Any potential connections identified must be
+        thoroughly investigated before any action is taken.
+    *   Focus on identifying patterns and anomalies in the data.
+    *   Consider the limitations of the data.
+    *   Avoid making assumptions or drawing hasty conclusions.
+    *   Ensure all actions comply with legal and ethical guidelines.
+
+    **Data Description:**
+
+    The provided data contains information about devices and users potentially involved
+    in online harassment.  This may include:
+
+    *   **Device Information:** IP addresses, device IDs, operating system, browser information,
+        location data (if available).
+    *   **User Details:** Usernames, email addresses, social media profiles, online activity logs.
+        (Note: Treat this data with utmost sensitivity.)
+
+    **Instructions:**
+
+    1.  **Analyze Data for Potential Connections:** Analyze the provided data to identify:
+        *   **Shared IP Addresses:** Multiple users connecting from the same IP address.
+        *   **Similar Device Fingerprints:** Devices with similar configurations or software.
+        *   **Overlapping Online Activity:** Users active on the same platforms or websites at similar times.
+        *   **Related Social Media Accounts:** Accounts that are linked to each other or share similar content.
+        *   **Anomalous Behavior:** Unusual patterns of activity, such as rapid account creation or sudden changes in behavior.
+        *   **Geolocation Patterns:** Users who appear in the same geolocation repeatedly during harassment events.
+
+    2.  **Assess the Strength of Connections:** For each potential connection, assess its strength based on the amount of supporting evidence.
+
+    3.  **Prioritize Potential Leads:**  Identify the most promising leads for further investigation based on the strength of the connections and the potential for identifying the harasser.
+
+    4.  **Format the Report:** Structure the report as follows:
+
+        **Investigative Analysis Report**
+
+        **Date:** [Current Date and Time]
+
+        **Data Source:** [Description of the data source - e.g., "Data collected from [Platform] logs"]
+
+        **Executive Summary:** [A brief overview of the potential connections and leads.]
+
+        **Detailed Findings:**
+
+        *   **Potential Connection 1:** [Description of the potential connection - e.g., "Multiple users sharing the same IP address"]
+            *   **Users Involved:** [List of usernames or identifiers]
+            *   **Supporting Evidence:** [Specific data points supporting the connection]
+            *   **Strength of Connection:** [High/Medium/Low]
+            *   **Potential Lead:** [Explanation of how this connection could lead to identifying the harasser]
+
+        *   **Potential Connection 2:** [Repeat the above structure for each potential connection]
+
+        **Conclusion:** [A summary of the most promising leads for further investigation.  Emphasize that this report identifies POTENTIAL connections, and further investigation is required.] """ + json.dumps(data, indent=2) + """
 """
         )
         model = genai.GenerativeModel('gemini-2.0-flash')
