@@ -1,8 +1,9 @@
 Flask
 requests
-Faker
 reportlab
 cryptography
 stegano
 Pillow
 PyPDF2
+Faker
+google-generativeai
