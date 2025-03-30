@@ -37,8 +37,11 @@ fake = Faker()
 ENCRYPTION_KEY = Fernet.generate_key()
 CIPHER = Fernet(ENCRYPTION_KEY)
 
-# Store tokens for verification
+# Store tokens for verification (ephemeral)
 logged_tokens = {}
+
+# Global list to store downloaded reports (token and report)
+downloaded_reports = []
 
 def get_hidden_message(data):
     """Return the hidden message wrapped with markers."""
@@ -112,7 +115,6 @@ def collect_data(req):
 def embed_data_in_image(data):
     """Embed encrypted data in an image using steganography."""
     encrypted_data = CIPHER.encrypt(json.dumps(data).encode())
-    # Create a base image (500x500) for more capacity.
     base_img = PILImage.new('RGB', (500, 500), color='white')
     temp_path = 'temp_base.png'
     base_img.save(temp_path)
@@ -140,66 +142,26 @@ def get_gemini_report(data):
     The prompt instructs Gemini to act as a Security and Forensics Analyst.
     """
     try:
-        prompt = (    """ You are a highly skilled Security and Forensics Analyst. Your task is to analyze the following data and provide a comprehensive security report.
-    The data represents system logs, network traffic, or other security-related information.
+        prompt = (
+            """You are a highly skilled Security and Forensics Analyst. Your task is to analyze the following data and provide a comprehensive security report.
+            
+**Instructions:**
+1. Identify potential security threats or vulnerabilities.
+2. Assess the risk level (High, Medium, Low) for each threat.
+3. Provide specific recommendations to mitigate each identified risk.
+4. Explain your reasoning with reference to specific data points.
 
-    **Instructions:**
+**Report Structure:**
+- **Date:** [Current Date and Time]
+- **Data Source:** Provided system logs and client data.
+- **Executive Summary:** Brief overview of key findings.
+- **Detailed Findings:** List of findings with risk level, evidence, and recommendations.
+- **Conclusion:** Overall assessment of security posture.
 
-    1.  **Identify Security Threats:**  Analyze the data to identify potential security threats, vulnerabilities, or anomalies.  This includes, but is not limited to:
-        *   Malware infections
-        *   Unauthorized access attempts
-        *   Data exfiltration
-        *   Suspicious network activity
-        *   Vulnerabilities in software or configurations
-        *   Policy violations
-        *   Compliance issues
-
-    2.  **Assess Risk Level:**  For each identified threat, assess the risk level (High, Medium, Low) based on the potential impact and likelihood of occurrence.  Provide a justification for the risk level.
-
-    3.  **Provide Recommendations:**  For each identified threat, provide specific and actionable recommendations to mitigate the risk.  These recommendations should include steps to:
-        *   Contain the threat
-        *   Eradicate the threat
-        *   Prevent future occurrences
-
-    4.  **Explain Your Reasoning:**  Clearly explain your reasoning for each conclusion.  Cite specific evidence from the data to support your analysis.
-
-    5.  **Format the Report:**  Structure the report as follows:
-
-        **Security Analysis Report**
-
-        **Date:** [Current Date and Time]
-
-        **Data Source:** [Description of the data source]
-
-        **Executive Summary:** [A brief overview of the key findings and recommendations.]
-
-        **Detailed Findings:**
-
-        *   **Finding 1:** [Description of the threat]
-            *   **Risk Level:** [High/Medium/Low]
-            *   **Justification:** [Explanation of the risk level]
-            *   **Evidence:** [Specific data points supporting the finding]
-            *   **Recommendations:** [Specific steps to mitigate the risk]
-
-        *   **Finding 2:** [Repeat the above structure for each finding]
-
-        **Conclusion:** [A summary of the overall security posture and key takeaways.]
-
-        **Appendix:** [Raw data or other supporting information (optional)]
-
-    **Data to Analyze:**
-
-    ```
-    {data}
-    ```
-
-    **Important Considerations:**
-
-    *   Be thorough and comprehensive in your analysis.
-    *   Prioritize critical threats and vulnerabilities.
-    *   Provide clear and concise recommendations.
-    *   Maintain a professional and objective tone.
-    """  + json.dumps(data))
+**Data to Analyze:**
+""" + json.dumps(data, indent=2) + """
+"""
+        )
         model = genai.GenerativeModel('gemini-2.0-flash')
         response = model.generate_content(prompt)
         report = response.text
@@ -316,7 +278,7 @@ HTML_PAGE = """
         <input type="hidden" name="plugins" id="plugins">
     </form>
     <br>
-    <a href="/logs">View Logged Data</a>
+    <a href="/logs">View Logs and Gemini Reports</a>
     <script>
         var pageLoadTime = Date.now();
         document.getElementById('pageLoadTime').value = pageLoadTime;
@@ -383,7 +345,7 @@ def download():
     logged_data = collect_data(request)
     logging.info(json.dumps(logged_data))
     
-    # Use Gemini AI via Google Gen AI SDK to generate a report.
+    # Generate Gemini report and store it in the logged data.
     gemini_report = get_gemini_report(logged_data)
     logged_data["gemini_report"] = gemini_report
     logging.info("Gemini AI report: " + gemini_report)
@@ -397,6 +359,11 @@ def download():
 
     pdf_buffer, token = generate_pdf(logged_data)
     logged_tokens[token] = logged_data
+    # Also store the report in the global downloaded_reports list.
+    downloaded_reports.append({
+        "token": token,
+        "gemini_report": gemini_report
+    })
 
     return send_file(pdf_buffer, as_attachment=True, download_name='sample.pdf', mimetype='application/pdf')
 
@@ -419,7 +386,7 @@ def pdf_callback():
 def pdf_callback_stage2():
     token = request.args.get('token', '')
     if token in logged_tokens:
-        logging.info(f"Stage2 callback: Token {token} verified with data: {json.dumps(logged_tokens[token])}")
+        logging.info(f"Stage2 callback: Token {token} verified with data: " + json.dumps(logged_tokens[token]))
         return "Stage2 callback logged", 200
     return "Invalid token", 400
 
@@ -427,41 +394,50 @@ def pdf_callback_stage2():
 def display_logs():
     try:
         with open('user_logs.log', 'r') as f:
-            logs = f.read()
+            logs_content = f.read()
     except Exception as e:
-        logs = f"Error reading log file: {e}"
+        logs_content = f"Error reading log file: {e}"
     
+    # Build HTML to display raw logs and the downloaded Gemini reports.
     logs_html = """
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>User Logs</title>
+        <title>User Logs and Gemini Reports</title>
         <style>
             body { font-family: Arial, sans-serif; margin: 20px; background-color: #f9f9f9; }
-            h1 { color: #333; }
+            h1, h2 { color: #333; }
             pre { background: #eee; padding: 15px; border-radius: 5px; overflow: auto; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }
+            th { background-color: #f2f2f2; }
         </style>
     </head>
     <body>
         <h1>User Logs</h1>
         <pre>{{ logs }}</pre>
+        <h2>Downloaded Gemini Reports</h2>
+        {% if reports %}
+        <table>
+            <tr>
+                <th>Token</th>
+                <th>Gemini Report</th>
+            </tr>
+            {% for report in reports %}
+            <tr>
+                <td>{{ report.token }}</td>
+                <td><pre>{{ report.gemini_report }}</pre></td>
+            </tr>
+            {% endfor %}
+        </table>
+        {% else %}
+        <p>No reports available.</p>
+        {% endif %}
     </body>
     </html>
     """
-    return render_template_string(logs_html, logs=logs)
-
-@app.route('/gemini', methods=['GET'])
-def display_gemini_report():
-    """
-    Endpoint to display the Gemini AI report for a given token.
-    Access it via /gemini?token=YOUR_TOKEN
-    """
-    token = request.args.get('token')
-    if token in logged_tokens:
-        report = logged_tokens[token].get("gemini_report", "No report available")
-        return render_template_string("<h1>Gemini AI Report</h1><p>{{ report }}</p>", report=report)
-    return "Invalid token", 400
+    return render_template_string(logs_html, logs=logs_content, reports=downloaded_reports)
 
 @app.route('/simulate')
 def simulate():
