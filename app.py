@@ -140,7 +140,7 @@ def get_gemini_report(data):
     The prompt instructs Gemini to act as a Security and Forensics Analyst.
     """
     try:
-        prompt = (      You are a highly skilled Security and Forensics Analyst. Your task is to analyze the following data and provide a comprehensive security report.
+        prompt = (    """ You are a highly skilled Security and Forensics Analyst. Your task is to analyze the following data and provide a comprehensive security report.
     The data represents system logs, network traffic, or other security-related information.
 
     **Instructions:**
