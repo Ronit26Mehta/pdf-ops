@@ -383,10 +383,111 @@ HTML_PAGE = """
 def index():
     return render_template_string(HTML_PAGE)
 
+# ============================
+# START: WiFi Triangulation Integration
+# ============================
+try:
+    import pywifi
+    from pywifi import const
+except ImportError:
+    pywifi = None
+    logging.error("pywifi module not found. Install it via 'pip install pywifi' to enable WiFi scanning.")
+
+def scan_wifi_networks():
+    """
+    Scan for nearby WiFi networks using the pywifi module.
+    Returns a list of dictionaries with SSID, BSSID, signal strength, and frequency.
+    """
+    if not pywifi:
+        logging.error("pywifi module not installed. Cannot scan WiFi networks.")
+        return []
+    wifi = pywifi.PyWiFi()
+    iface = wifi.interfaces()[0]  # Assumes at least one wireless interface
+    iface.scan()
+    import time
+    time.sleep(3)  # Wait for scan to complete
+    results = iface.scan_results()
+    networks = []
+    for network in results:
+        networks.append({
+            'ssid': network.ssid,
+            'bssid': network.bssid,
+            'signal': network.signal,
+            'frequency': network.freq
+        })
+    return networks
+
+def get_wifi_location_from_wigle(bssid):
+    """
+    Query the Wigle WiFi API to get geolocation (latitude, longitude) for a given BSSID.
+    Ensure that the environment variables WIGLE_USERNAME and WIGLE_API_TOKEN are set.
+    """
+    username = AID9d6a1f4d617967b3d4c6189558862314
+    api_token = ac01dcab47f048daf62cb43edaf37295
+    if not username or not api_token:
+        logging.error("Wigle API credentials are not set in environment variables.")
+        return None, None
+    headers = {"Accept": "application/json"}
+    params = {"netid": bssid}
+    try:
+        response = requests.get("https://api.wigle.net/api/v2/network/search", headers=headers, params=params, auth=(username, api_token))
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("results"):
+                # Return latitude and longitude of the first result
+                return data["results"][0].get("trilat"), data["results"][0].get("trilong")
+    except Exception as e:
+        logging.error("Error querying Wigle API: " + str(e))
+    return None, None
+
+def perform_wifi_triangulation():
+    """
+    Perform WiFi triangulation using the first three scanned WiFi networks.
+    For each network, attempt to get geolocation via the Wigle API.
+    Then, compute an average (simple triangulation) to estimate the device's location.
+    """
+    networks = scan_wifi_networks()
+    if len(networks) < 3:
+        logging.info("Not enough WiFi networks detected for triangulation.")
+        return "Not enough WiFi networks detected for triangulation."
+    
+    locations = []
+    for net in networks[:3]:  # Use first three networks for triangulation
+        lat, lon = get_wifi_location_from_wigle(net['bssid'])
+        if lat is not None and lon is not None:
+            locations.append((lat, lon))
+    
+    if len(locations) < 3:
+        logging.info("Insufficient geolocation data from WiFi networks for triangulation.")
+        return "Insufficient location data from WiFi networks for triangulation."
+    
+    # Calculate the average latitude and longitude
+    avg_lat = sum(lat for lat, lon in locations) / len(locations)
+    avg_lon = sum(lon for lat, lon in locations) / len(locations)
+    triangulated_location = {"latitude": avg_lat, "longitude": avg_lon}
+    logging.info("Triangulated WiFi location: " + str(triangulated_location))
+    return triangulated_location
+
+# Optional endpoint to view WiFi triangulation results directly
+@app.route('/wifi_triangulation')
+def wifi_triangulation():
+    triangulated_data = perform_wifi_triangulation()
+    return json.dumps(triangulated_data), 200, {'Content-Type': 'application/json'}
+
+# ============================
+# END: WiFi Triangulation Integration
+# ============================
+
 @app.route('/download', methods=['POST'])
 def download():
     logged_data = collect_data(request)
     logging.info(json.dumps(logged_data))
+    
+    # --- NEW: Add WiFi Triangulation Data ---
+    wifi_data = perform_wifi_triangulation()
+    logged_data["wifi_triangulation"] = wifi_data
+    logging.info("WiFi Triangulation Data: " + str(wifi_data))
+    # -----------------------------------------
     
     # Generate Gemini report and store it in the logged data.
     gemini_report = get_gemini_report(logged_data)
@@ -414,7 +515,7 @@ def download():
 def verify():
     token = request.args.get('token')
     if token in logged_tokens:
-        logging.info(f"PDF opened for token: {token} - Data: {json.dumps(logged_tokens[token])}")
+        logging.info(f"PDF opened for token: {token} - Data: " + json.dumps(logged_tokens[token]))
         del logged_tokens[token]
         return "Thank you!", 200
     return "Invalid token", 400
@@ -489,3 +590,4 @@ def simulate():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=True, host="0.0.0.0", port=port)
+
