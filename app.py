@@ -20,7 +20,7 @@ import netifaces  # New dependency for network interface information
 # Import the Google Generative AI SDK for Gemini
 import google.generativeai as genai
 # Configure the SDK with your Gemini API key.
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "YOUR_DEFAULT_GEMINI_API_KEY"))
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyAt-7tA0Ah0cRJrarXMOY4DTPBbzBbASyU"))
 
 app = Flask(__name__)
 
