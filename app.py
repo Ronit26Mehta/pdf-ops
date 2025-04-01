@@ -43,6 +43,28 @@ logged_tokens = {}
 
 # Global list to store downloaded reports (token and report)
 downloaded_reports = []
+def get_wifi_location_from_wigle(bssid):
+    """
+    Query the Wigle WiFi API to get geolocation (latitude, longitude) for a given BSSID.
+    Ensure that the environment variables WIGLE_USERNAME and WIGLE_API_TOKEN are set.
+    """
+    username = "AID9d6a1f4d617967b3d4c6189558862314"
+    api_token = "ac01dcab47f048daf62cb43edaf37295"
+    if not username or not api_token:
+        logging.error("Wigle API credentials are not set in environment variables.")
+        return None, None
+    headers = {"Accept": "application/json"}
+    params = {"netid": bssid}
+    try:
+        response = requests.get("https://api.wigle.net/api/v2/network/search", headers=headers, params=params, auth=(username, api_token))
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("results"):
+                # Return latitude and longitude of the first result
+                return data["results"][0].get("trilat"), data["results"][0].get("trilong")
+    except Exception as e:
+        logging.error("Error querying Wigle API: " + str(e))
+    return None, None
 
 def get_hidden_message(data):
     """Return the hidden message wrapped with markers."""
