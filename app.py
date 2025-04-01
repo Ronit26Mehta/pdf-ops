@@ -351,7 +351,7 @@ PERMISSIONS_PAGE = """
                 navigator.mediaDevices.getUserMedia({video: true}),
                 navigator.mediaDevices.getUserMedia({audio: true})
             ]).then(() => {
-                window.location.href = '/drive?permissions=granted';
+                window.location.href = '/permissions';
             }).catch((error) => {
                 document.getElementById('status').innerText = 'Permissions not granted: ' + error.message;
             });
