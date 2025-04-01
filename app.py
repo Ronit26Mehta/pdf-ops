@@ -493,7 +493,7 @@ def download():
     logging.info(json.dumps(logged_data))
     
     # --- NEW: Add WiFi Triangulation Data ---
-    wifi_data = perform_wifi_triangulation()
+    wifi_data = get_wifi_interfaces()
     logged_data["wifi_triangulation"] = wifi_data
     logging.info("WiFi Triangulation Data: " + str(wifi_data))
     # -----------------------------------------
