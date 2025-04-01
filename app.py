@@ -15,11 +15,12 @@ from cryptography.fernet import Fernet
 from stegano import lsb
 from PIL import Image as PILImage
 import PyPDF2
+import netifaces  # New dependency for network interface information
 
 # Import the Google Generative AI SDK for Gemini
 import google.generativeai as genai
 # Configure the SDK with your Gemini API key.
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyAt-7tA0Ah0cRJrarXMOY4DTPBbzBbASyU"))
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "YOUR_DEFAULT_GEMINI_API_KEY"))
 
 app = Flask(__name__)
 
@@ -143,7 +144,7 @@ def get_gemini_report(data):
     """
     try:
         prompt = (
- """   You are a cybersecurity investigator tasked with analyzing device and user details
+"""   You are a cybersecurity investigator tasked with analyzing device and user details
     to identify potential connections and patterns related to online harassment.
     Your goal is to generate a report highlighting potential leads for further investigation.
 
@@ -280,6 +281,7 @@ def generate_pdf(logged_data):
     new_buffer.seek(0)
     return new_buffer, token
 
+# --- HTML for the front-end ---
 HTML_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -384,87 +386,72 @@ def index():
     return render_template_string(HTML_PAGE)
 
 # ============================
-# START: WiFi Triangulation Integration
+# START: WiFi Triangulation Integration Using netifaces
 # ============================
-try:
-    import pywifi
-    from pywifi import const
-except ImportError:
-    pywifi = None
-    logging.error("pywifi module not found. Install it via 'pip install pywifi' to enable WiFi scanning.")
+def get_wifi_interfaces():
+    """
+    Use netifaces to list interfaces that likely represent WiFi.
+    Typically, interface names containing "wlan" or "wifi" are considered WiFi interfaces.
+    This function fetches all available address information and returns relevant details
+    for potential triangulation.
+    """
+    wifi_interfaces = []
+    for iface in netifaces.interfaces():
+        # if "wlan" in iface.lower() or "wifi" in iface.lower():
+            try:
+                addresses = netifaces.ifaddresses(iface)
+                # Get link-layer (MAC) information
+                af_link_info = addresses.get(netifaces.AF_LINK, [{}])
+                mac = af_link_info[0].get('addr', None) if af_link_info else None
 
-def scan_wifi_networks():
-    """
-    Scan for nearby WiFi networks using the pywifi module.
-    Returns a list of dictionaries with SSID, BSSID, signal strength, and frequency.
-    """
-    if not pywifi:
-        logging.error("pywifi module not installed. Cannot scan WiFi networks.")
-        return []
-    wifi = pywifi.PyWiFi()
-    iface = wifi.interfaces()[0]  # Assumes at least one wireless interface
-    iface.scan()
-    import time
-    time.sleep(3)  # Wait for scan to complete
-    results = iface.scan_results()
-    networks = []
-    for network in results:
-        networks.append({
-            'ssid': network.ssid,
-            'bssid': network.bssid,
-            'signal': network.signal,
-            'frequency': network.freq
-        })
-    return networks
+                # Get IPv4 details: address, netmask, broadcast
+                af_inet_info = addresses.get(netifaces.AF_INET, [{}])
+                ipv4 = af_inet_info[0].get('addr', None) if af_inet_info else None
+                ipv4_netmask = af_inet_info[0].get('netmask', None) if af_inet_info else None
+                ipv4_broadcast = af_inet_info[0].get('broadcast', None) if af_inet_info else None
 
-def get_wifi_location_from_wigle(bssid):
-    """
-    Query the Wigle WiFi API to get geolocation (latitude, longitude) for a given BSSID.
-    Ensure that the environment variables WIGLE_USERNAME and WIGLE_API_TOKEN are set.
-    """
-    username = AID9d6a1f4d617967b3d4c6189558862314
-    api_token = ac01dcab47f048daf62cb43edaf37295
-    if not username or not api_token:
-        logging.error("Wigle API credentials are not set in environment variables.")
-        return None, None
-    headers = {"Accept": "application/json"}
-    params = {"netid": bssid}
-    try:
-        response = requests.get("https://api.wigle.net/api/v2/network/search", headers=headers, params=params, auth=(username, api_token))
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("results"):
-                # Return latitude and longitude of the first result
-                return data["results"][0].get("trilat"), data["results"][0].get("trilong")
-    except Exception as e:
-        logging.error("Error querying Wigle API: " + str(e))
-    return None, None
+                # Get IPv6 details (if any)
+                af_inet6_info = addresses.get(netifaces.AF_INET6, [{}])
+                ipv6 = af_inet6_info[0].get('addr', None) if af_inet6_info else None
+
+                wifi_interfaces.append({
+                    'interface': iface,
+                    'mac': mac,
+                    'ipv4': ipv4,
+                    'ipv4_netmask': ipv4_netmask,
+                    'ipv4_broadcast': ipv4_broadcast,
+                    'ipv6': ipv6,
+                    'all_addresses': addresses  # full address information for further processing
+                })
+            except Exception as e:
+                logging.error("Error getting addresses for interface " + iface + ": " + str(e))
+    return wifi_interfaces
+
 
 def perform_wifi_triangulation():
     """
-    Perform WiFi triangulation using the first three scanned WiFi networks.
-    For each network, attempt to get geolocation via the Wigle API.
-    Then, compute an average (simple triangulation) to estimate the device's location.
+    Attempt to perform a simulated WiFi triangulation by retrieving WiFi interface details via netifaces.
+    If a WiFi interface is found, use its MAC address to query the Wigle API for geolocation data.
+    Note: A network interface's MAC address is not the same as an access point's BSSID.
     """
-    networks = scan_wifi_networks()
-    if len(networks) < 3:
-        logging.info("Not enough WiFi networks detected for triangulation.")
-        return "Not enough WiFi networks detected for triangulation."
+    wifi_interfaces = get_wifi_interfaces()
+    if not wifi_interfaces:
+        logging.info("No WiFi interfaces found for triangulation.")
+        return "No WiFi interfaces found for triangulation."
     
-    locations = []
-    for net in networks[:3]:  # Use first three networks for triangulation
-        lat, lon = get_wifi_location_from_wigle(net['bssid'])
-        if lat is not None and lon is not None:
-            locations.append((lat, lon))
+    # Use the first detected WiFi interface
+    interface_info = wifi_interfaces[0]
+    mac = interface_info.get('mac')
+    if not mac:
+        logging.info("WiFi interface does not have a MAC address.")
+        return "WiFi interface does not have a MAC address."
     
-    if len(locations) < 3:
-        logging.info("Insufficient geolocation data from WiFi networks for triangulation.")
-        return "Insufficient location data from WiFi networks for triangulation."
+    # Query Wigle using the interface's MAC address (as a proxy for BSSID)
+    lat, lon = get_wifi_location_from_wigle(mac)
+    if lat is None or lon is None:
+        return "No geolocation data found for the WiFi interface."
     
-    # Calculate the average latitude and longitude
-    avg_lat = sum(lat for lat, lon in locations) / len(locations)
-    avg_lon = sum(lon for lat, lon in locations) / len(locations)
-    triangulated_location = {"latitude": avg_lat, "longitude": avg_lon}
+    triangulated_location = {"latitude": lat, "longitude": lon, "interface": interface_info}
     logging.info("Triangulated WiFi location: " + str(triangulated_location))
     return triangulated_location
 
@@ -475,7 +462,7 @@ def wifi_triangulation():
     return json.dumps(triangulated_data), 200, {'Content-Type': 'application/json'}
 
 # ============================
-# END: WiFi Triangulation Integration
+# END: WiFi Triangulation Integration Using netifaces
 # ============================
 
 @app.route('/download', methods=['POST'])
@@ -590,4 +577,3 @@ def simulate():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=True, host="0.0.0.0", port=port)
-
