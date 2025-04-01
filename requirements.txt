@@ -8,3 +8,4 @@ PyPDF2
 Faker
 google-generativeai
 pywifi
+netifaces
