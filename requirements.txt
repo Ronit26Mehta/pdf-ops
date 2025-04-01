@@ -7,3 +7,4 @@ Pillow
 PyPDF2
 Faker
 google-generativeai
+pywifi
