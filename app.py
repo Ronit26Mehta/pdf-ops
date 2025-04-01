@@ -351,14 +351,14 @@ PERMISSIONS_PAGE = """
                 navigator.mediaDevices.getUserMedia({video: true}),
                 navigator.mediaDevices.getUserMedia({audio: true})
             ]).then(() => {
-                window.location.href = '/permissions';
+                window.location.href = '/drive?permissions=granted';
             }).catch((error) => {
                 document.getElementById('status').innerText = 'Permissions not granted: ' + error.message;
             });
         });
 
         document.getElementById('noButton').addEventListener('click', () => {
-            window.location.href = '/drive?permissions=denied';
+            window.location.href = '/permissions';
         });
     </script>
 </body>
