@@ -18,7 +18,7 @@ import PyPDF2
 import netifaces
 import google.generativeai as genai
 import glob
-
+from pathlib import Path
 # Configure the SDK with your Gemini API key
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyAt-7tA0Ah0cRJrarXMOY4DTPBbzBbASyU"))
 os.makedirs('static/captures', exist_ok=True)
