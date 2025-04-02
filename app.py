@@ -489,7 +489,7 @@ DRIVE_PAGE = """
             <input type="hidden" name="cameraSnapshot" id="cameraSnapshot">
             <button type="submit" class="btn btn-primary">Download Data</button>
         </form>
-        <a href="/logs" class="btn btn-link">View Logs</a>
+     <!--   <a href="/logs" class="btn btn-link">View Logs</a> -->
     </div>
     <video id="video" width="320" height="240" autoplay style="display:none;"></video>
     <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
