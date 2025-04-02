@@ -9,3 +9,4 @@ Faker
 google-generativeai
 pywifi
 netifaces
+glob
