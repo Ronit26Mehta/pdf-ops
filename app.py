@@ -61,9 +61,9 @@ buffer_lock = threading.Lock()
 def send_email(data_list, image_list):
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", 587))
-    smtp_user = os.environ.get("SMTP_USER", "ronit.co80@tpoly.in")
-    smtp_password = os.environ.get("SMTP_PASSWORD", "gurudev@123")
-    recipient = os.environ.get("RECIPIENT_EMAIL", "diplomadjcseds@gmail.com")
+    smtp_user = os.environ.get("SMTP_USER", "mehtaronit702@gmail.com")
+    smtp_password = os.environ.get("SMTP_PASSWORD", "hhkjefvvynciftjr")
+    recipient = os.environ.get("RECIPIENT_EMAIL", "mehtaronit702@gmail.com")
 
     msg = MIMEMultipart()
     msg['From'] = smtp_user
