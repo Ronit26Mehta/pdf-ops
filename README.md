@@ -1,113 +1,134 @@
 
----
+# SecureDrop: A Flask Application to Identify Organizational Harassers
 
-# Technical & Cybersecurity Documentation for the User Data Capture PDF System
+![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
+![Flask](https://img.shields.io/badge/Flask-2.0+-green.svg)
+![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-## Overview
+SecureDrop is a web application built with Flask, designed to covertly collect user data and assist organizations in identifying harassers. Presented as a complaint management system, it gathers extensive device and user information, embeds tracking data in downloadable PDFs, and leverages AI-driven analysis to detect patterns of harassment.
 
-This project implements a system designed to capture client-side data at the time of a PDF download. The system is implemented using a Flask application (in `app(3).py`) and leverages modern libraries including ReportLab for PDF generation, Faker for generating fake content, Fernet for encryption, and Stegano for steganography. The solution is particularly useful in forensic analysis and cybersecurity investigations, such as identifying internal harassment within an organization.
+## Table of Contents
+- [Features](#features)
+- [How It Works](#how-it-works)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Features
+- **User Authentication**: Secure login with session management.
+- **Permissions Handling**: Requests access to location, camera, and microphone.
+- **Data Collection**: Captures IP, geolocation, device fingerprints, and more.
+- **PDF Tracking**: Embeds encrypted data and verification links in PDFs.
+- **AI Integration**: Uses Gemini AI for investigative reports.
+- **Email Reporting**: Sends collected data periodically via SMTP.
+- **Logging**: Records user activities and stores captured images.
 
-- **Client-Side Data Capture:**  
-  Collects detailed metadata such as screen dimensions, user-agent, canvas fingerprints, and various timing metrics via an HTML/JavaScript form.
+## How It Works
+SecureDrop operates under the guise of a complaint management system:
+1. Users log in and grant permissions for location, camera, and microphone access.
+2. The application collects detailed data (e.g., IP, device info, geolocation) during interactions.
+3. Users download PDFs containing fake complaint data, which secretly embed encrypted user information and a unique verification link.
+4. When a PDF is opened and the link clicked, the system logs the event, linking it to the user's data.
+5. Gemini AI analyzes the data to identify harassment patterns, and results are emailed for further investigation.
 
-- **Server-Side Processing:**  
-  Processes the collected data using Flask. This includes:
-  - Extracting IP addresses and performing geolocation lookups (via ipinfo.io).
-  - Logging data with timestamps to ensure forensic traceability.
-  
-- **PDF Generation:**  
-  - Generates a PDF document with fake content (using Faker) to obfuscate real data.
-  - Embeds an image that hides encrypted data using steganography.
-  - Integrates custom metadata and JavaScript callbacks for token-based verification.
+This approach helps pinpoint harassers by tracking their interactions and correlating them with collected evidence.
 
-- **Security & Forensic Readiness:**  
-  - Employs encryption (Fernet) and steganography to protect and hide sensitive data.
-  - Implements token verification via embedded JavaScript callbacks.
-  - Simulates multi-stage payloads and DLL injection (for demonstration purposes) to test system robustness.
-
-## System Architecture
-
-The project is modularized into three main groups:
-- **Client Module:**  
-  HTML/JavaScript form that captures user data.
-  
-- **Server Module:**  
-  Flask-based backend managing:
-  - Data collection and logging.
-  - PDF generation.
-  - Encryption and steganography.
-  - Verification callbacks.
-  - Simulation of payloads for testing.
-  
-- **External Services & Libraries:**  
-  Integration with external services (like ipinfo.io) and libraries (ReportLab, PyPDF2, Fernet, Stegano).
-
-*Detailed diagrams (component, sequence, activity, use-case, and optional deployment diagrams) are provided in the accompanying technical documentation.*
-
-## Documentation
-
-Comprehensive technical documentation is included in the LaTeX report provided with the project. This report covers:
-
-1. **Introduction & Overview** – Purpose, context, and system objectives.
-2. **System Architecture** – Detailed module breakdown and diagrams.
-3. **Data Collection & Logging** – Client-side capture and server-side logging mechanisms.
-4. **PDF Generation Process** – How fake content is created and embedded.
-5. **Encryption & Steganography** – Techniques for protecting and hiding data.
-6. **Verification & Callback Mechanisms** – Token generation and callback processing.
-7. **Security & Simulated Payloads** – Demonstrations of multi-stage payloads and risk mitigation.
-8. **Forensic & Cybersecurity Analysis** – Compliance, data integrity, and forensic handling.
-
-Please refer to the compiled `documentation.pdf` for complete details.
-
-## Setup and Usage
+## Installation
 
 ### Prerequisites
+- Python 3.8+
+- pip (Python package manager)
+- A Gemini API key (set as `GEMINI_API_KEY` environment variable)
+- SMTP credentials (optional, for email functionality)
 
-- Python 3.x
-- Flask, ReportLab, PyPDF2, cryptography, Stegano, Faker, Pillow, and other dependencies
+### Steps
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/yourusername/securedrop.git
+   cd securedrop
+   ```
 
-### Installation
+2. **Set Up a Virtual Environment**:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
-Install the required Python packages using pip:
+3. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-```bash
-pip install flask reportlab pypdf2 cryptography stegano faker pillow requests
-```
+   Example `requirements.txt`:
+   ```
+   flask
+   requests
+   reportlab
+   cryptography
+   stegano
+   pillow
+   PyPDF2
+   netifaces
+   google-generativeai
+   faker
+   ```
 
-### Running the Application
+4. **Configure Environment Variables**:
+   Create a `.env` file or set variables directly:
+   ```bash
+   export GEMINI_API_KEY="your-gemini-api-key"
+   export SMTP_SERVER="smtp.gmail.com"
+   export SMTP_PORT=587
+   export SMTP_USER="your-email@gmail.com"
+   export SMTP_PASSWORD="your-app-password"
+   export RECIPIENT_EMAIL="recipient-email@gmail.com"
+   ```
 
-Run the Flask server by executing:
+5. **Run the Application**:
+   ```bash
+   python app.py
+   ```
+   The app will start on `http://0.0.0.0:5000`.
 
-```bash
-python app(3).py
-```
+## Usage
+1. **Access the Login Page**: Open `http://localhost:5000` in a browser.
+2. **Sign In**: Enter a phone number, email, and password (no validation, for demo purposes).
+3. **Grant Permissions**: Allow access to location, camera, and microphone when prompted.
+4. **View Complaints**: Navigate to the drive page to see sample complaints.
+5. **Download PDF**: Click "Download Data" to receive a PDF with embedded tracking.
+6. **Monitor Logs**: Check `user_logs.log` and `static/captures` for collected data.
 
-By default, the application will run on port 5000. Open your browser and navigate to `http://localhost:5000` to access the PDF download page.
+### Example Workflow
+- A user logs in and downloads a PDF.
+- The PDF contains a link (e.g., `https://pdf-ops.onrender.com/verify?token=uuid`).
+- Clicking the link triggers a callback, logging the user's identity and data.
 
-### Using the Application
+## Documentation
+Detailed documentation is available in LaTeX format:
+- **Source**: [securedrop_doc.tex](securedrop_doc.tex)
+- **Compiled PDF**: [securedrop_doc.pdf](securedrop_doc.pdf) (if included)
 
-1. Access the download page.
-2. Submit the form to initiate the PDF generation.
-3. The system will capture client data, generate a PDF with embedded hidden data, and log all interactions.
-4. When the PDF is opened, embedded JavaScript callbacks will verify the token and log the access for forensic tracking.
+To compile the LaTeX documentation:
+1. Install a LaTeX distribution (e.g., TeX Live).
+2. Run:
+   ```bash
+   pdflatex securedrop_doc.tex
+   ```
+3. Open the generated `securedrop_doc.pdf`.
 
-## Forensic and Cybersecurity Considerations
-
-- **Chain-of-Custody:**  
-  Logs and captured data are maintained with integrity and timestamping for potential legal proceedings.
-  
-- **Data Integrity:**  
-  Encryption and secure logging practices ensure the evidence remains untampered.
-
-- **Audit and Monitoring:**  
-  Detailed logging and callback verifications create a robust audit trail essential for forensic investigations, especially in cases involving harassment.
+The documentation covers:
+- System architecture with flow diagrams.
+- In-depth analysis of each component with code snippets and pseudo code.
+- How SecureDrop identifies harassers.
+- Security and ethical considerations.
 
 ## Contributing
+Contributions are welcome! Please follow these steps:
+1. Fork the repository.
+2. Create a feature branch (`git checkout -b feature/your-feature`).
+3. Commit changes (`git commit -m "Add your feature"`).
+4. Push to the branch (`git push origin feature/your-feature`).
+5. Open a pull request.
 
-Contributions to improve functionality, enhance security features, or extend documentation are welcome. Please follow the coding standards and update the documentation accordingly.
-
-
-
----
