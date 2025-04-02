@@ -19,6 +19,7 @@ import netifaces
 import google.generativeai as genai
 import glob
 from pathlib import Path
+
 # Configure the SDK with your Gemini API key
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyAt-7tA0Ah0cRJrarXMOY4DTPBbzBbASyU"))
 os.makedirs('static/captures', exist_ok=True)
@@ -435,7 +436,7 @@ DRIVE_PAGE = """
                     fetch('/log_camera', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({snapshot: snapshot})
+                        body: JSON.stringify({image: snapshot})
                     });
                 }
 
