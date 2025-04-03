@@ -537,8 +537,9 @@ LOGIN_PAGE = """
     <div class="login-container">
         <h1>Sign in to SecureDrop</h1>
         <form action="/login" method="post">
-            <label for="phone">Phone Number</label>
-            <input type="tel" id="phone" name="phone" required>
+            <label for="phone">Phone Number (India)</label>
+            <input type="tel" id="phone" name="phone" required pattern="[0-9]{10}" maxlength="10" placeholder="9876543210">
+            <small>Enter your 10-digit mobile number without the country code.</small>
             <label for="email">Email</label>
             <input type="email" id="email" name="email" required>
             <label for="password">Password</label>
