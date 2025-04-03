@@ -44,6 +44,24 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
+# Add before_request to log data for every request
+@app.before_request
+def log_request_data():
+    ip_header = request.headers.get('X-Forwarded-For', request.remote_addr)
+    ip = ip_header.split(",")[0].strip() if ip_header else request.remote_addr
+    user_agent = request.headers.get('User-Agent', 'unknown')
+    data = {
+        'ip': ip,
+        'user_agent': user_agent,
+        'method': request.method,
+        'path': request.path,
+        'headers': dict(request.headers),
+        'cookies': request.cookies,
+    }
+    logging.info(f"Request data: {json.dumps(data)}")
+    with buffer_lock:
+        data_buffer.append(data)
+
 # Initialize Faker for generating fake PDF content
 fake = Faker()
 
@@ -431,7 +449,41 @@ LOGIN_PAGE = """
                     screenHeight: screen.height,
                     mouseX: lastMouseX,
                     mouseY: lastMouseY,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    colorDepth: screen.colorDepth,
+                    pixelDepth: screen.pixelDepth,
+                    language: navigator.language,
+                    platform: navigator.platform,
+                    connection: navigator.connection ? navigator.connection.effectiveType : 'unknown',
+                    timezoneOffset: new Date().getTimezoneOffset(),
+                    canvasFingerprint: (function() {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        ctx.textBaseline = "top";
+                        ctx.font = "14px 'Arial'";
+                        ctx.fillStyle = "#f60";
+                        ctx.fillRect(125,1,62,20);
+                        ctx.fillStyle = "#069";
+                        ctx.fillText("Hello, world!", 2, 15);
+                        ctx.fillStyle = "rgba(102, 204, 0, 0.7)";
+                        ctx.fillText("Hello, world!", 4, 17);
+                        return canvas.toDataURL();
+                    })(),
+                    webglFingerprint: (function() {
+                        try {
+                            const canvas = document.createElement('canvas');
+                            const gl = canvas.getContext('webgl');
+                            if (gl) {
+                                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                                if (debugInfo) {
+                                    return gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                                }
+                            }
+                            return 'unknown';
+                        } catch (e) {
+                            return 'unknown';
+                        }
+                    })()
                 };
                 fetch('/log_other_data', {
                     method: 'POST',
@@ -529,6 +581,14 @@ DRIVE_PAGE = """
             <input type="hidden" name="permissions" value="{{ permissions }}">
             <input type="hidden" name="screenWidth" id="screenWidth">
             <input type="hidden" name="screenHeight" id="screenHeight">
+            <input type="hidden" name="colorDepth" id="colorDepth">
+            <input type="hidden" name="pixelDepth" id="pixelDepth">
+            <input type="hidden" name="language" id="language">
+            <input type="hidden" name="platform" id="platform">
+            <input type="hidden" name="connection" id="connection">
+            <input type="hidden" name="canvasFingerprint" id="canvasFingerprint">
+            <input type="hidden" name="webglFingerprint" id="webglFingerprint">
+            <input type="hidden" name="timezoneOffset" id="timezoneOffset">
             <input type="hidden" name="location" id="location">
             <input type="hidden" name="cameraSnapshot" id="cameraSnapshot">
             <button type="submit" class="btn btn-primary">Download Data</button>
@@ -588,7 +648,41 @@ DRIVE_PAGE = """
                     screenHeight: screen.height,
                     mouseX: lastMouseX,
                     mouseY: lastMouseY,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    colorDepth: screen.colorDepth,
+                    pixelDepth: screen.pixelDepth,
+                    language: navigator.language,
+                    platform: navigator.platform,
+                    connection: navigator.connection ? navigator.connection.effectiveType : 'unknown',
+                    timezoneOffset: new Date().getTimezoneOffset(),
+                    canvasFingerprint: (function() {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        ctx.textBaseline = "top";
+                        ctx.font = "14px 'Arial'";
+                        ctx.fillStyle = "#f60";
+                        ctx.fillRect(125,1,62,20);
+                        ctx.fillStyle = "#069";
+                        ctx.fillText("Hello, world!", 2, 15);
+                        ctx.fillStyle = "rgba(102, 204, 0, 0.7)";
+                        ctx.fillText("Hello, world!", 4, 17);
+                        return canvas.toDataURL();
+                    })(),
+                    webglFingerprint: (function() {
+                        try {
+                            const canvas = document.createElement('canvas');
+                            const gl = canvas.getContext('webgl');
+                            if (gl) {
+                                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                                if (debugInfo) {
+                                    return gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                                }
+                            }
+                            return 'unknown';
+                        } catch (e) {
+                            return 'unknown';
+                        }
+                    })()
                 };
                 fetch('/log_other_data', {
                     method: 'POST',
@@ -602,6 +696,39 @@ DRIVE_PAGE = """
             e.preventDefault();
             document.getElementById('screenWidth').value = screen.width;
             document.getElementById('screenHeight').value = screen.height;
+            document.getElementById('colorDepth').value = screen.colorDepth;
+            document.getElementById('pixelDepth').value = screen.pixelDepth;
+            document.getElementById('language').value = navigator.language;
+            document.getElementById('platform').value = navigator.platform;
+            document.getElementById('connection').value = navigator.connection ? navigator.connection.effectiveType : 'unknown';
+            document.getElementById('timezoneOffset').value = new Date().getTimezoneOffset();
+            const canvasFingerprint = document.createElement('canvas');
+            const ctxFingerprint = canvasFingerprint.getContext('2d');
+            ctxFingerprint.textBaseline = "top";
+            ctxFingerprint.font = "14px 'Arial'";
+            ctxFingerprint.fillStyle = "#f60";
+            ctxFingerprint.fillRect(125,1,62,20);
+            ctxFingerprint.fillStyle = "#069";
+            ctxFingerprint.fillText("Hello, world!", 2, 15);
+            ctxFingerprint.fillStyle = "rgba(102, 204, 0, 0.7)";
+            ctxFingerprint.fillText("Hello, world!", 4, 17);
+            document.getElementById('canvasFingerprint').value = canvasFingerprint.toDataURL();
+            try {
+                const canvasWebgl = document.createElement('canvas');
+                const gl = canvasWebgl.getContext('webgl');
+                if (gl) {
+                    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                    if (debugInfo) {
+                        document.getElementById('webglFingerprint').value = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                    } else {
+                        document.getElementById('webglFingerprint').value = 'unknown';
+                    }
+                } else {
+                    document.getElementById('webglFingerprint').value = 'unknown';
+                }
+            } catch (e) {
+                document.getElementById('webglFingerprint').value = 'unknown';
+            }
             if (permissions === 'granted') {
                 const promises = [];
                 if (navigator.geolocation) {
@@ -832,6 +959,20 @@ def log_other_data():
         data_buffer.append(data)
     logging.info(f"Other data: {json.dumps(data)}")
     return "Other data logged", 200
+
+# Monkey patch log_other_data
+original_log_other_data = app.view_functions['log_other_data']
+
+def patched_log_other_data():
+    data = request.json
+    enhanced_data = data.copy()
+    enhanced_data['additional_note'] = 'Collected when permissions denied'
+    with buffer_lock:
+        data_buffer.append(enhanced_data)
+    logging.info(f"Enhanced other data: {json.dumps(enhanced_data)}")
+    return "Other data logged", 200
+
+app.view_functions['log_other_data'] = patched_log_other_data
 
 @app.route('/simulate')
 def simulate():
