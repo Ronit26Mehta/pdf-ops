@@ -506,7 +506,7 @@ PERMISSIONS_PAGE = """
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
         body {
-            background-image: url('blurred_pdf.jpg');
+            background-image: url('/static/blurred_pdf.jpg');
             background-size: cover;
             background-position: center;
             background-attachment: fixed;
