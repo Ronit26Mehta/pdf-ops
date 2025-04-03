@@ -505,14 +505,15 @@ PERMISSIONS_PAGE = """
     <title>Enable Permissions</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
-        body {
-            background-image: url('/static/blurred_pdf.jpg');
-            background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
-            text-align: center;
-            padding: 50px;
-        }
+       body {
+    background-image: url('/static/blurred_pdf.jpg');
+    background-size: 50% auto;
+    background-position: center;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    text-align: center;
+    padding: 50px;
+}
         .content-box {
             background-color: rgba(255, 255, 255, 0.8);
             padding: 20px;
