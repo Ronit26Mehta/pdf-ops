@@ -310,7 +310,7 @@ The provided data contains information about devices and users potentially invol
    **Conclusion:** [Summary of promising leads]
 """ + json.dumps(data, indent=2)
         )
-        model = genai.GenerativeModel('gemini-2.5-pro-preview-03-25')  # Update model name as per availability
+        model = genai.GenerativeModel('gemini-2.0-flash')  # Update model name as per availability
         response = model.generate_content(prompt)
         report = response.text
         logging.info(f"Gemini AI report received: {report}")
