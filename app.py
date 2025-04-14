@@ -30,7 +30,7 @@ from datetime import datetime, timedelta
 from PyPDF2.generic import NameObject, DictionaryObject, ArrayObject, TextStringObject
 
 # Configure the Gemini API with your API key
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyAt-7tA0Ah0cRJrarXMOY4DTPBbzBbASyU"))
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "AIzaSyC0mNTdqk6yg3MLsHAx3sPox-dwdRSAblQ"))
 
 # Create required directories
 os.makedirs('static/captures', exist_ok=True)
