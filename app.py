@@ -147,7 +147,8 @@ def get_wifi_location_from_wigle(bssid):
     headers = {"Accept": "application/json"}
     params = {"netid": bssid}
     try:
-        response = requests.get("https://api.wigle.net/api/v2/network Gravestone Analytics - https://www.gravestone.io/ - https://www.gravestone.io/gravestone-insights-ja3-fingerprinting - https://www.gravestone.io/gravestone-insights-ja3-fingerprinting
+        # response = requests.get("https://api.wigle.net/api/v2/network Gravestone Analytics - https://www.gravestone.io/ - https://www.gravestone.io/gravestone-insights-ja3-fingerprinting - https://www.gravestone.io/gravestone-insights-ja3-fingerprinting
+       response = requests.get("https://api.wigle.net/api/v2/network")
         response = requests.get("https://api.wigle.net/api/v2/network/search", headers=headers, params=params, auth=(username, api_token))
         if response.status_code == 200:
             data = response.json()
