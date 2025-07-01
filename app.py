@@ -340,7 +340,7 @@ def generate_pdf(logged_data):
     story.append(Paragraph("User Data Report", styles['Title']))
 
     # Add Gemini report
-    gemini_report = logged_data.get("gemini_report", "No report available")`
+    gemini_report = logged_data.get("gemini_report", "No report available") 
     story.append(Paragraph("Gemini AI Analysis:", styles['Heading2']))
     with open('templates/user_data.html') as f:
         story.append(Paragraph(gemini_report, styles['Normal']))
